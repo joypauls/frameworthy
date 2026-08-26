@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+import logging
+
 import narwhals.stable.v2 as nw
 from narwhals.stable.v2.typing import IntoDataFrame
 
 from frameworthy._errors import FrameworthyAssertionError
+
+logger = logging.getLogger(__name__)
 
 
 class TransformationExpectation:
@@ -22,7 +26,7 @@ class TransformationExpectation:
         # self._before_native = relative_to
         # self._after_native = after
 
-    def preserves_rows(self) -> None:
+    def preserves_rows(self, throw: bool = True) -> None:
         """Assert that the transformation preserves row count"""
         before_rows = self._before.shape[0]
         after_rows = self._after.shape[0]
@@ -32,13 +36,15 @@ class TransformationExpectation:
 
         difference = after_rows - before_rows
 
-        raise FrameworthyAssertionError(
-            format_row_count_failure(
-                before_rows=before_rows,
-                after_rows=after_rows,
-                difference=difference,
-            )
+        formatted_message = format_row_count_failure(
+            before_rows=before_rows,
+            after_rows=after_rows,
+            difference=difference,
         )
+        if throw:
+            raise FrameworthyAssertionError(formatted_message)
+        else:
+            logger.warning(formatted_message)
 
 
 def expect(
