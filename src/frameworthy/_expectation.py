@@ -59,18 +59,15 @@ def format_row_count_failure(
     after_rows: int,
     difference: int,
 ) -> str:
+    absolute_difference = abs(difference)
+    row_wording = "row" if absolute_difference == 1 else "rows"
+    direction = "introduced" if difference > 0 else "removed"
+
     if before_rows == 0:
-        percentage = None
+        change_display = f"{difference:+,} {row_wording}"
     else:
         percentage = difference / before_rows
-
-    direction = "introduced" if difference > 0 else "removed"
-    absolute_difference = abs(difference)
-
-    if percentage is None:
-        change_display = f"{difference:+,} rows"
-    else:
-        change_display = f"{difference:+,} rows ({percentage:+.2%})"
+        change_display = f"{difference:+,} {row_wording} ({percentage:+.2%})"
 
     return (
         "Expected transformation to preserve row count.\n"
@@ -79,7 +76,5 @@ def format_row_count_failure(
         f"after     {after_rows:,} rows\n"
         f"change    {change_display}\n"
         "\n"
-        f"The transformation {direction} "
-        f"{absolute_difference:,} "
-        f"{'row' if absolute_difference == 1 else 'rows'}."
+        f"The transformation {direction} {absolute_difference:,} {row_wording}."
     )
