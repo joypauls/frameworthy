@@ -3,9 +3,9 @@
 import frameworthy as fw
 
 
-def test_preserves_rows_passes_when_row_count_equal(
+def test_passes_when_row_count_equal(
     frame_factory,
-) -> None:
+):
     before = frame_factory(
         {
             "id": [1, 2, 3],
