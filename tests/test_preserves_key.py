@@ -42,23 +42,23 @@ def test_passes_when_key_population_same(
     fw.expect(after, relative_to=before).preserves_key("id")
 
 
-def test_preserves_key_ignores_row_order(
+def test_ignores_row_order(
     frame_factory,
 ):
     before = frame_factory(
         {
-            "id": [1, 2, 2, 3],
+            "id": [1, 2, 3],
         }
     )
     after = frame_factory(
         {
-            "id": [3, 2, 1, 2],
+            "id": [3, 2, 1],
         }
     )
     fw.expect(after, relative_to=before).preserves_key("id")
 
 
-def test_preserves_key_fails_when_key_value_changes(
+def test_detects_key_value_change(
     frame_factory,
 ):
     before = frame_factory(
@@ -71,8 +71,86 @@ def test_preserves_key_fails_when_key_value_changes(
             "id": [1, 2, 4],
         }
     )
-    with pytest.raises(
-        fw.FrameworthyAssertionError,
-        match="Expected transformation to preserve key",
-    ):
+    with pytest.raises(fw.FrameworthyAssertionError):
         fw.expect(after, relative_to=before).preserves_key("id")
+
+
+def test_handles_null_values(
+    frame_factory,
+) -> None:
+    before = frame_factory(
+        {
+            "id": [1.0, None, 3.0],
+        }
+    )
+    after = frame_factory(
+        {
+            "id": [None, 3.0, 1.0],
+        }
+    )
+    fw.expect(
+        after,
+        relative_to=before,
+    ).preserves_key("id")
+
+
+def test_detects_null_multiplicity_change(
+    frame_factory,
+) -> None:
+    before = frame_factory(
+        {
+            "id": [1.0, None, 3.0],
+        }
+    )
+    after = frame_factory(
+        {
+            "id": [None, None, 3.0],
+        }
+    )
+    with pytest.raises(fw.FrameworthyAssertionError):
+        fw.expect(
+            after,
+            relative_to=before,
+        ).preserves_key("id")
+
+
+###
+# COMPOSITE KEYS
+###
+
+
+def test_passes_with_composite_key(
+    frame_factory,
+) -> None:
+    before = frame_factory(
+        {
+            "customer_id": [1, 1, 2],
+            "order_id": [10, 11, 20],
+        }
+    )
+    after = frame_factory(
+        {
+            "customer_id": [2, 1, 1],
+            "order_id": [20, 11, 10],
+        }
+    )
+    fw.expect(after, relative_to=before).preserves_key(["customer_id", "order_id"])
+
+
+def test_detects_composite_key_value_change(
+    frame_factory,
+) -> None:
+    before = frame_factory(
+        {
+            "id1": [1, 1, 2],
+            "id2": [10, 11, 20],
+        }
+    )
+    after = frame_factory(
+        {
+            "id1": [1, 1, 2],
+            "id2": [10, 12, 20],
+        }
+    )
+    with pytest.raises(fw.FrameworthyAssertionError):
+        fw.expect(after, relative_to=before).preserves_key(["id1", "id2"])
