@@ -1,4 +1,4 @@
-# frameworthy [WIP]
+# frameworthy
 
 ![PyPI Version](https://img.shields.io/pypi/v/frameworthy)
 
@@ -12,5 +12,14 @@ Many dataframe tests never get written because verifying a transformation means 
 - **User Friendly**: Clear error messages that explain what failed and why.
 - **Flexible**: Intended to be equally useful with testing frameworks like pytest or in scripts for real-world validation.
 
+## Comparison with Similar Tools
 
+| | What it checks | Best for |
+|---|---|---|
+| [Pandera](https://pandera.readthedocs.io/) / [Great Expectations](https://greatexpectations.io/) | Does this dataframe conform to a schema? | Validating pipeline inputs/outputs in critical production settings |
+| **Pandas/Polars** `assert_frame_equal` | Does this dataframe exactly equal that one? | Regression tests once you already have a golden output reference |
+| **Frameworthy** | Did this *transformation* preserve invariants or change what it should? | Testing transformation logic without building a full expected fixture |
 
+Frameworthy is built around asserting relational invariants between a transformation's input and output. Schema validators check one dataframe against a fixed spec; equality checks compare two dataframes exactly. In either case, you're expected to provide the expected schema output. Given the nature of real-world data transformation code, this means tests go unwritten. Moreover, in some cases schema definitions can be brittle and change frequently. This library aims to meet you where you are and help you write tests that are easy to understand and maintain.
+
+We do recommend using Pandera for critical schema validation, it is very powerful. It can also validate a function's input and output via `check_io`, but each is still checked independently against its own schema.
