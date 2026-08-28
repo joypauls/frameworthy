@@ -14,7 +14,7 @@ def test_pandas_dataset_preserves_rows():
     after = before.copy()
     after["sepal_area"] = after["sepal_length"] * after["sepal_width"]
 
-    fw.expect(after, relative_to=before).preserves_rows()
+    fw.expect(after, before=before).preserves_rows()
 
 
 def test_polars_dataset_preserves_rows():
@@ -24,4 +24,4 @@ def test_polars_dataset_preserves_rows():
         (pl.col("sepal_length") * pl.col("sepal_width")).alias("sepal_area")
     )
 
-    fw.expect(after, relative_to=before).preserves_rows()
+    fw.expect(after, before=before).preserves_rows()

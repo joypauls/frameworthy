@@ -146,10 +146,10 @@ class TransformationExpectation:
 def expect(
     after: IntoDataFrame,
     *,
-    relative_to: IntoDataFrame,
+    before: IntoDataFrame,
 ) -> TransformationExpectation:
     """Create expectations about a DataFrame relative to an earlier state"""
     return TransformationExpectation(
         after,
-        relative_to=relative_to,
+        before=before,
     )

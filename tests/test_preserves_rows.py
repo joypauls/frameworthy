@@ -19,4 +19,4 @@ def test_passes_when_row_count_equal(
         }
     )
 
-    fw.expect(after, relative_to=before).preserves_rows()
+    fw.expect(after, before=before).preserves_rows()

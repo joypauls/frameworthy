@@ -17,5 +17,5 @@ after = pd.DataFrame(
 
 fw.expect(
     after,
-    relative_to=before,
+    before=before,
 ).preserves_rows()

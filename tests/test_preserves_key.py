@@ -19,10 +19,7 @@ def test_detects_changed_multiplicity(
     before = frame_factory({"id": before_keys})
     after = frame_factory({"id": after_keys})
     with pytest.raises(fw.FrameworthyAssertionError):
-        fw.expect(
-            after,
-            relative_to=before,
-        ).preserves_key("id")
+        fw.expect(after, before=before).preserves_key("id")
 
 
 def test_passes_when_key_population_same(
@@ -39,7 +36,7 @@ def test_passes_when_key_population_same(
             "metric": [0.1, 0.2, 0.3],
         }
     )
-    fw.expect(after, relative_to=before).preserves_key("id")
+    fw.expect(after, before=before).preserves_key("id")
 
 
 def test_ignores_row_order(
@@ -55,7 +52,7 @@ def test_ignores_row_order(
             "id": [3, 2, 1],
         }
     )
-    fw.expect(after, relative_to=before).preserves_key("id")
+    fw.expect(after, before=before).preserves_key("id")
 
 
 def test_detects_key_value_change(
@@ -72,7 +69,7 @@ def test_detects_key_value_change(
         }
     )
     with pytest.raises(fw.FrameworthyAssertionError):
-        fw.expect(after, relative_to=before).preserves_key("id")
+        fw.expect(after, before=before).preserves_key("id")
 
 
 def test_handles_null_values(
@@ -88,10 +85,7 @@ def test_handles_null_values(
             "id": [None, 3.0, 1.0],
         }
     )
-    fw.expect(
-        after,
-        relative_to=before,
-    ).preserves_key("id")
+    fw.expect(after, before=before).preserves_key("id")
 
 
 def test_detects_null_multiplicity_change(
@@ -108,10 +102,7 @@ def test_detects_null_multiplicity_change(
         }
     )
     with pytest.raises(fw.FrameworthyAssertionError):
-        fw.expect(
-            after,
-            relative_to=before,
-        ).preserves_key("id")
+        fw.expect(after, before=before).preserves_key("id")
 
 
 ###
@@ -134,7 +125,7 @@ def test_passes_with_composite_key(
             "order_id": [20, 11, 10],
         }
     )
-    fw.expect(after, relative_to=before).preserves_key(["customer_id", "order_id"])
+    fw.expect(after, before=before).preserves_key(["customer_id", "order_id"])
 
 
 def test_detects_composite_key_value_change(
@@ -153,4 +144,4 @@ def test_detects_composite_key_value_change(
         }
     )
     with pytest.raises(fw.FrameworthyAssertionError):
-        fw.expect(after, relative_to=before).preserves_key(["id1", "id2"])
+        fw.expect(after, before=before).preserves_key(["id1", "id2"])
