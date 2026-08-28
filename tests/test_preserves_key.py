@@ -18,9 +18,61 @@ def test_detects_changed_multiplicity(
 ):
     before = frame_factory({"id": before_keys})
     after = frame_factory({"id": after_keys})
-
     with pytest.raises(fw.FrameworthyAssertionError):
         fw.expect(
             after,
             relative_to=before,
         ).preserves_key("id")
+
+
+def test_passes_when_key_population_same(
+    frame_factory,
+):
+    before = frame_factory(
+        {
+            "id": [1, 2, 3],
+        }
+    )
+    after = frame_factory(
+        {
+            "id": [1, 2, 3],
+            "metric": [0.1, 0.2, 0.3],
+        }
+    )
+    fw.expect(after, relative_to=before).preserves_key("id")
+
+
+def test_preserves_key_ignores_row_order(
+    frame_factory,
+):
+    before = frame_factory(
+        {
+            "id": [1, 2, 2, 3],
+        }
+    )
+    after = frame_factory(
+        {
+            "id": [3, 2, 1, 2],
+        }
+    )
+    fw.expect(after, relative_to=before).preserves_key("id")
+
+
+def test_preserves_key_fails_when_key_value_changes(
+    frame_factory,
+):
+    before = frame_factory(
+        {
+            "id": [1, 2, 3],
+        }
+    )
+    after = frame_factory(
+        {
+            "id": [1, 2, 4],
+        }
+    )
+    with pytest.raises(
+        fw.FrameworthyAssertionError,
+        match="Expected transformation to preserve key",
+    ):
+        fw.expect(after, relative_to=before).preserves_key("id")
