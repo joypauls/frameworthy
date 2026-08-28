@@ -19,8 +19,6 @@ def test_detects_changed_multiplicity(
     before = frame_factory({"id": before_keys})
     after = frame_factory({"id": after_keys})
 
-    # fw.expect(after, relative_to=before).preserves_rows()
-
     with pytest.raises(fw.FrameworthyAssertionError):
         fw.expect(
             after,

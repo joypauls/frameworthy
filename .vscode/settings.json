@@ -1,6 +1,12 @@
 {
   "[python]": {
     "editor.formatOnSave": true,
-    "editor.defaultFormatter": "charliermarsh.ruff"
+    "editor.defaultFormatter": "charliermarsh.ruff",
+    "editor.codeActionsOnSave": {
+            // This fixes unused imports and other lint errors
+            // "source.fixAll.ruff": "explicit",
+            // This automatically groups and sorts your imports (isort)
+            "source.organizeImports.ruff": "explicit"
+        }
   }
 }

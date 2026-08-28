@@ -1,6 +1,6 @@
 import pandas as pd
-import frameworthy as fw
 
+import frameworthy as fw
 
 before = pd.DataFrame(
     {
