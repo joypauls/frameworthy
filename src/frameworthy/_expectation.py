@@ -1,13 +1,66 @@
 from __future__ import annotations
 
 import logging
+import math
+from collections import Counter
+from collections.abc import Sequence
+from typing import Any
 
 import narwhals.stable.v2 as nw
 from narwhals.stable.v2.typing import IntoDataFrame
 
+from frameworthy._constants import NULL_KEY
 from frameworthy._errors import FrameworthyAssertionError
+from frameworthy._formatting import (
+    format_key_failure,
+    format_key_names,
+    format_row_count_failure,
+)
 
 logger = logging.getLogger(__name__)
+
+
+def _normalize_keys(
+    key: str | Sequence[str],
+) -> list[str]:
+    if isinstance(key, str):
+        return [key]
+
+    keys = list(key)
+
+    if not keys:
+        raise ValueError("At least one key column is required.")
+
+    return keys
+
+
+def _normalize_key_value(value: Any) -> Any:
+    if value is None:
+        return NULL_KEY
+
+    if isinstance(value, float) and math.isnan(value):
+        return NULL_KEY
+
+    return value
+
+
+def _key_counts(
+    frame: nw.DataFrame,
+    keys: list[str],
+) -> Counter[tuple[Any, ...]]:
+    grouped = frame.group_by(*keys, drop_null_keys=False).agg(
+        nw.len().alias("__frameworthy_count")
+    )
+    counts = Counter()
+
+    for row in grouped.iter_rows():
+        *key_values, count = row
+
+        normalized_key = tuple(_normalize_key_value(value) for value in key_values)
+
+        counts[normalized_key] = int(count)
+
+    return counts
 
 
 class TransformationExpectation:
@@ -46,6 +99,49 @@ class TransformationExpectation:
         else:
             logger.warning(formatted_message)
 
+    def preserves_key(
+        self,
+        key: str | Sequence[str],
+    ) -> None:
+        """Assert that key values and their multiplicities are preserved."""
+        keys = _normalize_keys(key)
+
+        missing_before = [
+            column for column in keys if column not in self._before.columns
+        ]
+
+        if missing_before:
+            raise ValueError(
+                f"Key columns not found in reference frame: {', '.join(missing_before)}"
+            )
+
+        missing_after = [column for column in keys if column not in self._after.columns]
+
+        if missing_after:
+            raise FrameworthyAssertionError(
+                "Expected transformation to preserve key "
+                f"{format_key_names(keys)}, but the following "
+                "key columns are missing from the result: "
+                f"{', '.join(missing_after)}"
+            )
+
+        before_counts = _key_counts(self._before, keys)
+        after_counts = _key_counts(self._after, keys)
+
+        if before_counts == after_counts:
+            return
+
+        missing = before_counts - after_counts
+        added = after_counts - before_counts
+
+        raise FrameworthyAssertionError(
+            format_key_failure(
+                keys=keys,
+                missing=missing,
+                added=added,
+            )
+        )
+
 
 def expect(
     after: IntoDataFrame,
@@ -56,31 +152,4 @@ def expect(
     return TransformationExpectation(
         after,
         relative_to=relative_to,
-    )
-
-
-def format_row_count_failure(
-    *,
-    before_rows: int,
-    after_rows: int,
-    difference: int,
-) -> str:
-    absolute_difference = abs(difference)
-    row_wording = "row" if absolute_difference == 1 else "rows"
-    direction = "introduced" if difference > 0 else "removed"
-
-    if before_rows == 0:
-        change_display = f"{difference:+,} {row_wording}"
-    else:
-        percentage = difference / before_rows
-        change_display = f"{difference:+,} {row_wording} ({percentage:+.2%})"
-
-    return (
-        "Expected transformation to preserve row count.\n"
-        "\n"
-        f"before    {before_rows:,} rows\n"
-        f"after     {after_rows:,} rows\n"
-        f"change    {change_display}\n"
-        "\n"
-        f"The transformation {direction} {absolute_difference:,} {row_wording}."
     )
