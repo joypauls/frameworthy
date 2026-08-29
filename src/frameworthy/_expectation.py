@@ -70,13 +70,13 @@ class TransformationExpectation:
         self,
         after: IntoDataFrame,
         *,
-        relative_to: IntoDataFrame,
+        before: IntoDataFrame,
     ) -> None:
-        self._before = nw.from_native(relative_to, eager_only=True)
+        self._before = nw.from_native(before, eager_only=True)
         self._after = nw.from_native(after, eager_only=True)
 
         # should we store the native frames too?
-        # self._before_native = relative_to
+        # self._before_native = before
         # self._after_native = after
 
     def preserves_rows(self, throw: bool = True) -> None:
