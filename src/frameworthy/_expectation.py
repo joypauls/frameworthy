@@ -27,7 +27,6 @@ def _normalize_keys(
         return [key]
 
     keys = list(key)
-
     if not keys:
         raise ValueError("At least one key column is required.")
 
@@ -37,10 +36,8 @@ def _normalize_keys(
 def _normalize_key_value(value: Any) -> Any:
     if value is None:
         return NULL_KEY
-
     if isinstance(value, float) and math.isnan(value):
         return NULL_KEY
-
     return value
 
 
@@ -55,9 +52,7 @@ def _key_counts(
 
     for row in grouped.iter_rows():
         *key_values, count = row
-
         normalized_key = tuple(_normalize_key_value(value) for value in key_values)
-
         counts[normalized_key] = int(count)
 
     return counts
@@ -83,10 +78,8 @@ class TransformationExpectation:
         """Assert that the transformation preserves row count"""
         before_rows = self._before.shape[0]
         after_rows = self._after.shape[0]
-
         if before_rows == after_rows:
             return
-
         difference = after_rows - before_rows
 
         formatted_message = format_row_count_failure(
@@ -105,7 +98,6 @@ class TransformationExpectation:
     ) -> None:
         """Assert that key values and their multiplicities are preserved."""
         keys = _normalize_keys(key)
-
         missing_before = [
             column for column in keys if column not in self._before.columns
         ]
@@ -114,7 +106,6 @@ class TransformationExpectation:
             raise ValueError(
                 f"Key columns not found in reference frame: {', '.join(missing_before)}"
             )
-
         missing_after = [column for column in keys if column not in self._after.columns]
 
         if missing_after:
