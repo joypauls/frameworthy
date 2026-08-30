@@ -8,8 +8,9 @@ test-cov:
 
 .PHONY: release
 release:
-	@echo "Current Version: $$(uv version | cut -d' ' -f2)"
-	@read -p "New Version: " VERSION; \
+	@echo "Current Version: $$(uv version | cut -d' ' -f2)"; \
+	read -p "New Version: " VERSION; \
 	read -s -p "PyPI Token: " TOKEN; echo; \
-	uv version "$$VERSION"
+	uv version "$$VERSION"; \
+	rm -rf dist; \
 	uv build && uv publish --token "$$TOKEN"
