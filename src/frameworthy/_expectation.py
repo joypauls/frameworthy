@@ -143,6 +143,7 @@ class TransformationExpectation:
         )
 
 
+# main interface for end users
 def expect(
     after: IntoDataFrame,
     *,
