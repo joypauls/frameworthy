@@ -4,6 +4,9 @@
 
 Frameworthy is a lightweight Python testing library for dataframes and analytical transformations, supporting both Pandas and Polars. Instead of requiring exact expected outputs, it lets you express the properties a transformation should preserve or change: rows, keys, columns, values, aggregates, and more.
 
+<div align="center"><img src="docs/banner.png" width="600"></div>
+
+
 Many dataframe tests never get written because verifying a transformation means carefully constructing a second expected dataset. The goal of frameworthy is to make it easy to test what you actually care about, and extremely easy to understand why a test fails.
 
 ## Getting Started
