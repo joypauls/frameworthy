@@ -23,7 +23,7 @@ jobs:
         run: uv sync --dev
 
       - name: Run tests with coverage
-        run: make test-cov
+        run: make test-cov-ci
 
       - name: Upload coverage reports to Codecov
         uses: codecov/codecov-action@v5

@@ -14,7 +14,10 @@ from frameworthy._errors import FrameworthyAssertionError
 from frameworthy._formatting import (
     format_key_failure,
     format_key_names,
+    format_key_value,
     format_row_count_failure,
+    format_value_mismatch_failure,
+    format_value_population_failure,
 )
 
 logger = logging.getLogger(__name__)
@@ -58,6 +61,16 @@ def _key_counts(
     return counts
 
 
+def _is_missing(value: Any) -> bool:
+    return value is None or (isinstance(value, float) and math.isnan(value))
+
+
+def _values_equal(before: Any, after: Any) -> bool:
+    if _is_missing(before) or _is_missing(after):
+        return _is_missing(before) and _is_missing(after)
+    return bool(before == after)
+
+
 class TransformationExpectation:
     """Assertions about the relationship between two DataFrame states"""
 
@@ -74,7 +87,7 @@ class TransformationExpectation:
         # self._before_native = before
         # self._after_native = after
 
-    def preserves_rows(self, throw: bool = True) -> None:
+    def preserves_rows(self) -> None:
         """Assert that the transformation preserves row count"""
         before_rows = self._before.shape[0]
         after_rows = self._after.shape[0]
@@ -87,10 +100,7 @@ class TransformationExpectation:
             after_rows=after_rows,
             difference=difference,
         )
-        if throw:
-            raise FrameworthyAssertionError(formatted_message)
-        else:
-            logger.warning(formatted_message)
+        raise FrameworthyAssertionError(formatted_message)
 
     def preserves_key(
         self,
@@ -130,6 +140,121 @@ class TransformationExpectation:
                 keys=keys,
                 missing=missing,
                 added=added,
+            )
+        )
+
+    def preserves_values(
+        self,
+        *columns: str,
+        on: str | Sequence[str],
+    ) -> None:
+        """Assert that value columns are unchanged for rows aligned by key(s)."""
+        if not columns:
+            raise ValueError("At least one value column is required.")
+
+        keys = _normalize_keys(on)
+        value_columns = list(columns)
+
+        overlap = sorted(set(keys) & set(value_columns))
+        if overlap:
+            raise ValueError(
+                "Columns cannot be used as both alignment key and value "
+                f"columns: {', '.join(overlap)}"
+            )
+
+        required = keys + value_columns
+        missing_before = [
+            column for column in required if column not in self._before.columns
+        ]
+        if missing_before:
+            raise ValueError(
+                f"Columns not found in reference frame: {', '.join(missing_before)}"
+            )
+
+        missing_after = [
+            column for column in required if column not in self._after.columns
+        ]
+        if missing_after:
+            raise FrameworthyAssertionError(
+                f"Expected values in {format_key_names(value_columns)} to be "
+                f"preserved for rows aligned on {format_key_names(keys)}, but "
+                "the following columns are missing from the result: "
+                f"{', '.join(missing_after)}"
+            )
+
+        before_counts = _key_counts(self._before, keys)
+        duplicated_before = [key for key, count in before_counts.items() if count > 1]
+        if duplicated_before:
+            sample = ", ".join(
+                format_key_value(keys, key) for key in duplicated_before[:5]
+            )
+            raise ValueError(
+                "Alignment key must uniquely identify rows in the reference "
+                f"frame, but found duplicate keys: {sample}"
+            )
+
+        after_counts = _key_counts(self._after, keys)
+        duplicated_after = [key for key, count in after_counts.items() if count > 1]
+        if duplicated_after:
+            sample = ", ".join(
+                format_key_value(keys, key) for key in duplicated_after[:5]
+            )
+            raise ValueError(
+                "Alignment key must uniquely identify rows in the result "
+                f"frame, but found duplicate keys: {sample}"
+            )
+
+        before_key_set = set(before_counts)
+        after_key_set = set(after_counts)
+        if before_key_set != after_key_set:
+            raise FrameworthyAssertionError(
+                format_value_population_failure(
+                    keys=keys,
+                    columns=value_columns,
+                    missing=before_key_set - after_key_set,
+                    added=after_key_set - before_key_set,
+                )
+            )
+
+        before_rows = self._before.select(*keys, *value_columns)
+        after_rows = self._after.select(*keys, *value_columns)
+        n_keys = len(keys)
+
+        after_values = {}
+        for row in after_rows.iter_rows():
+            key_tuple = tuple(_normalize_key_value(value) for value in row[:n_keys])
+            after_values[key_tuple] = row[n_keys:]
+
+        mismatch_count = 0
+        sample: list[tuple[tuple[Any, ...], list[tuple[str, Any, Any]]]] = []
+
+        for row in before_rows.iter_rows():
+            key_tuple = tuple(_normalize_key_value(value) for value in row[:n_keys])
+            before_vals = row[n_keys:]
+            after_vals = after_values[key_tuple]
+
+            diffs = [
+                (column, before_val, after_val)
+                for column, before_val, after_val in zip(
+                    value_columns, before_vals, after_vals, strict=True
+                )
+                if not _values_equal(before_val, after_val)
+            ]
+
+            if diffs:
+                mismatch_count += 1
+                if len(sample) < 5:
+                    sample.append((key_tuple, diffs))
+
+        if mismatch_count == 0:
+            return
+
+        raise FrameworthyAssertionError(
+            format_value_mismatch_failure(
+                keys=keys,
+                columns=value_columns,
+                mismatch_count=mismatch_count,
+                sample=sample,
             )
         )
 

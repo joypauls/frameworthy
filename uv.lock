@@ -171,7 +171,6 @@ dev = [
     { name = "pytest-cov", specifier = ">=7.1.0" },
     { name = "ruff", specifier = ">=0.16.4" },
 ]
-docs = []
 
 [[package]]
 name = "iniconfig"

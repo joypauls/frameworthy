@@ -54,22 +54,6 @@ def test_detects_added_rows(
         fw.expect(after, before=before).preserves_rows()
 
 
-def test_does_not_raise_when_throw_is_false(
-    frame_factory,
-):
-    before = frame_factory(
-        {
-            "id": [1, 2, 3],
-        }
-    )
-    after = frame_factory(
-        {
-            "id": [1, 2],
-        }
-    )
-    fw.expect(after, before=before).preserves_rows(throw=False)
-
-
 def test_passes_with_empty_frames(
     frame_factory,
 ):

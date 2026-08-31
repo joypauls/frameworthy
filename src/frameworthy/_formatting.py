@@ -55,6 +55,75 @@ def format_key_value(
     )
 
 
+def format_value_population_failure(
+    *,
+    keys: list[str],
+    columns: list[str],
+    missing: set[tuple[Any, ...]],
+    added: set[tuple[Any, ...]],
+) -> str:
+    lines = [
+        (
+            f"Expected transformation to preserve values for "
+            f"{format_key_names(columns)} aligned on {format_key_names(keys)}."
+        ),
+        "",
+        "Alignment key population changed.",
+    ]
+
+    if missing:
+        noun = "key" if len(missing) == 1 else "keys"
+        lines.extend(
+            [
+                "",
+                f"missing    {len(missing):,} {noun}",
+            ]
+        )
+        for values in sorted(missing, key=repr)[:5]:
+            lines.append(f"  {format_key_value(keys, values)}")
+
+    if added:
+        noun = "key" if len(added) == 1 else "keys"
+        lines.extend(
+            [
+                "",
+                f"added      {len(added):,} {noun}",
+            ]
+        )
+        for values in sorted(added, key=repr)[:5]:
+            lines.append(f"  {format_key_value(keys, values)}")
+
+    return "\n".join(lines)
+
+
+def format_value_mismatch_failure(
+    *,
+    keys: list[str],
+    columns: list[str],
+    mismatch_count: int,
+    sample: list[tuple[tuple[Any, ...], list[tuple[str, Any, Any]]]],
+) -> str:
+    noun = "row" if mismatch_count == 1 else "rows"
+    lines = [
+        (
+            f"Expected values in {format_key_names(columns)} to be preserved "
+            f"for rows aligned on {format_key_names(keys)}."
+        ),
+        "",
+        f"mismatched    {mismatch_count:,} {noun}",
+        "",
+    ]
+
+    for key_values, diffs in sample:
+        key_display = format_key_value(keys, key_values)
+        diff_display = ", ".join(
+            f"{column}: {before!r} \u2192 {after!r}" for column, before, after in diffs
+        )
+        lines.append(f"  {key_display}: {diff_display}")
+
+    return "\n".join(lines)
+
+
 def format_key_failure(
     *,
     keys: list[str],

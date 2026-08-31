@@ -4,6 +4,10 @@ test:
 
 .PHONY: test-cov
 test-cov:
+	uv run pytest --cov=frameworthy
+
+.PHONY: test-cov-ci
+test-cov-ci:
 	uv run pytest --cov=frameworthy --cov-report=xml
 
 .PHONY: release
