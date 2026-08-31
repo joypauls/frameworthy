@@ -8,6 +8,10 @@ export default defineConfig({
 
 //   appearance: false,
 
+  head: [
+    ["link", { rel: "icon", type: "image/png", href: "/frameworthy/logo.png" }]
+  ],
+
   themeConfig: {
     nav: [
       { text: "Guide", link: "/getting-started" },
