@@ -14,3 +14,13 @@ release:
 	uv version "$$VERSION"; \
 	rm -rf dist; \
 	uv build && uv publish --token "$$TOKEN"
+
+.PHONY: docs-local
+docs-local:
+	npm run docs:dev
+
+.PHONY: docs-build
+docs-build:
+	npm run docs:build
+
+
