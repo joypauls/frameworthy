@@ -1,3 +1,5 @@
+> ⚠️ WIP: All 0.1.x releases are unstable. 0.2.0 will be the first stable release.
+
 # frameworthy
 
 ![PyPI Version](https://img.shields.io/pypi/v/frameworthy) 
