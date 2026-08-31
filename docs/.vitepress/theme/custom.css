@@ -1,0 +1,12 @@
+:root {
+  --vp-c-brand-1: #9B8FD0;
+  --vp-c-brand-2: color-mix(in srgb, var(--vp-c-brand-1) 90%, black);
+  --vp-c-brand-3: color-mix(in srgb, var(--vp-c-brand-1) 75%, black);
+  --vp-c-brand-soft: color-mix(in srgb, var(--vp-c-brand-1) 75%, transparent);
+}
+
+.dark {
+  --vp-c-brand-1: #a78bfa;
+  --vp-c-brand-2: color-mix(in srgb, var(--vp-c-brand-1) 90%, white);
+  --vp-c-brand-3: color-mix(in srgb, var(--vp-c-brand-1) 75%, white);
+}

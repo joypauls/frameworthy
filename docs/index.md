@@ -5,6 +5,9 @@ hero:
   name: frameworthy
 #   text: A lightweight testing library for dataframes and analytical transformations.
   tagline: Expressive assertions for the structural and statistical behavior of data transformations.
+  image:
+    src: /logo.png
+    alt: Frameworthy
   actions:
     - theme: brand
       text: Get Started
