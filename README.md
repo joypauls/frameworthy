@@ -1,7 +1,7 @@
 # frameworthy
 
 ![PyPI Version](https://img.shields.io/pypi/v/frameworthy) 
-[![PyPI pyversions](https://img.shields.io/pypi/pyversions/frameworthy.svg)](https://pypi.org/project/frameworthy/)
+[![PyPI pyversions](https://img.shields.io/pypi/pyversions/frameworthy.svg?x=1)](https://pypi.org/project/frameworthy/)
 [![codecov](https://codecov.io/gh/joypauls/frameworthy/branch/main/graph/badge.svg?token=npu0JtY8hc)](https://codecov.io/gh/joypauls/frameworthy)
 
 Frameworthy is a **lightweight Python testing library for dataframes and analytical transformations**, supporting both Pandas and Polars. Instead of requiring exact expected outputs, it lets you express the properties a transformation should preserve or change: rows, keys, columns, values, aggregates, and more.
