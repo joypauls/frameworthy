@@ -12,18 +12,22 @@ Frameworthy is a **lightweight Python testing library for dataframes and analyti
 
 Many dataframe tests never get written because verifying a transformation means carefully constructing a second expected dataset. The goal of frameworthy is to make it easy to test what you actually care about, and extremely easy to understand why a test fails.
 
+## Features
+
+- **Compatible**: Works with both Pandas and Polars dataframes through [Narwhals](https://narwhals-dev.github.io/narwhals/). Support for more dataframe libraries is being explored for future releases.
+- **User Friendly**: Clear error messages that explain what failed and why.
+- **Flexible**: Intended to be equally useful with testing frameworks like pytest or in scripts for real-world validation.
+
 ## Getting Started
 
 ### Installation
 
-Available on [PyPI](https://pypi.org/project/frameworthy/).
+Available on [PyPI](https://pypi.org/project/frameworthy/), use pip or your preferred package manager.
 
 ```bash
 pip install frameworthy
 # or
 uv add frameworthy
-# or
-poetry add frameworthy
 ```
 
 ### Example
@@ -43,14 +47,10 @@ fw.expect(output_df, before=input_df).preserves_rows()
 
 # test that the transformation preserves a key column
 fw.expect(output_df, before=input_df).preserves_key("col")
+
+# test that the transformation doesn't add or remove columns
+fw.expect(output_df, before=input_df).preserves_columns()
 ```
-
-
-## Features
-
-- **Compatible**: Works with both Pandas and Polars dataframes through [Narwhals](https://narwhals-dev.github.io/narwhals/). Support for more dataframe libraries is being explored for future releases.
-- **User Friendly**: Clear error messages that explain what failed and why.
-- **Flexible**: Intended to be equally useful with testing frameworks like pytest or in scripts for real-world validation.
 
 ## Comparison with Similar Tools
 

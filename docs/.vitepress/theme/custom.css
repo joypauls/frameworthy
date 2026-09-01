@@ -10,3 +10,7 @@
   --vp-c-brand-2: color-mix(in srgb, var(--vp-c-brand-1) 90%, white);
   --vp-c-brand-3: color-mix(in srgb, var(--vp-c-brand-1) 75%, white);
 }
+
+.VPImage {
+  max-width: 250px !important;
+}

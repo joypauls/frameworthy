@@ -12,6 +12,7 @@ from narwhals.stable.v2.typing import IntoDataFrame
 from frameworthy._constants import NULL_KEY
 from frameworthy._errors import FrameworthyAssertionError
 from frameworthy._formatting import (
+    format_column_failure,
     format_key_failure,
     format_key_names,
     format_key_value,
@@ -101,6 +102,24 @@ class TransformationExpectation:
             difference=difference,
         )
         raise FrameworthyAssertionError(formatted_message)
+
+    def preserves_columns(self) -> None:
+        """Assert that the set of column names is preserved, ignoring order."""
+        before_columns = set(self._before.columns)
+        after_columns = set(self._after.columns)
+
+        if before_columns == after_columns:
+            return
+
+        added = after_columns - before_columns
+        removed = before_columns - after_columns
+
+        raise FrameworthyAssertionError(
+            format_column_failure(
+                added=added,
+                removed=removed,
+            )
+        )
 
     def preserves_key(
         self,
