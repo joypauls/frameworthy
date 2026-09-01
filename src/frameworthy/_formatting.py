@@ -124,6 +124,26 @@ def format_value_mismatch_failure(
     return "\n".join(lines)
 
 
+def format_column_failure(
+    *,
+    added: set[str],
+    removed: set[str],
+) -> str:
+    lines = ["Columns were not preserved."]
+
+    if added:
+        lines.extend(["", "Added columns:"])
+        for column in sorted(added):
+            lines.append(f"  + {column}")
+
+    if removed:
+        lines.extend(["", "Removed columns:"])
+        for column in sorted(removed):
+            lines.append(f"  - {column}")
+
+    return "\n".join(lines)
+
+
 def format_key_failure(
     *,
     keys: list[str],
