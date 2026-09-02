@@ -2,7 +2,7 @@ import { defineConfig } from "vitepress"
 
 export default defineConfig({
   title: "frameworthy",
-  description: "A lightweight testing library for dataframes and analytical transformations.",
+  description: "Uncertainty-aware regression testing for data and metrics.",
 
   base: "/frameworthy/",
 
@@ -26,13 +26,13 @@ export default defineConfig({
           { text: "Getting Started", link: "/getting-started" }
         ]
       },
-      {
-        text: "Assertions",
-        items: [
-          { text: "Preserving Rows", link: "/assertions/preserves-rows" },
-          { text: "Preserving Keys", link: "/assertions/preserves-key" }
-        ]
-      }
+      // {
+      //   text: "API",
+      //   items: [
+      //     { text: "Preserving Rows", link: "/assertions/preserves-rows" },
+      //     { text: "Preserving Keys", link: "/assertions/preserves-key" }
+      //   ]
+      // }
     ],
 
     socialLinks: [

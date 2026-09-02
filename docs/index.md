@@ -3,8 +3,8 @@ layout: home
 
 hero:
   name: frameworthy
-#   text: A lightweight testing library for dataframes and analytical transformations.
-  tagline: Expressive assertions for the structural and statistical behavior of data transformations.
+#   text: Uncertainty-aware regression testing for data and metrics.
+  tagline: Uncertainty-aware regression testing for data and metrics.
   image:
     src: /logo.png
     alt: Frameworthy
@@ -17,19 +17,18 @@ hero:
       link: https://github.com/joypauls/frameworthy
 
 features:
-  - title: Transformation-aware
-    details: Assert that transformations preserve rows, keys, grain, and other properties that matter.
+  - title: Feature 1
+    details: Example details
 
-  - title: Built for real data work
-    details: Test relationships between DataFrames instead of only comparing exact outputs.
+  - title: Feature 2
+    details: Example details
 
-  - title: Expressive
-    details: Write tests that describe the contract your transformation is supposed to uphold.
+  - title: Feature 3
+    details: Example details
 ---
 
 ## Example
 
 ```python
-expect(after).preserves_rows(before)
 ```
 
