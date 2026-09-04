@@ -28,12 +28,12 @@ def _normalize_key_value(value: Any) -> Any:
 
 
 def key_counts(
-    frame: nw.DataFrame,
+    df: nw.DataFrame,
     key: str | Sequence[str],
 ) -> Counter[tuple[Any, ...]]:
     """Count occurrences of each distinct key value combination in a frame."""
     keys = _normalize_keys(key)
-    grouped = frame.group_by(*keys, drop_null_keys=False).agg(
+    grouped = df.group_by(*keys, drop_null_keys=False).agg(
         nw.len().alias("__frameworthy_count")
     )
     counts: Counter[tuple[Any, ...]] = Counter()
@@ -47,16 +47,16 @@ def key_counts(
 
 
 def duplicate_keys(
-    frame: nw.DataFrame,
+    df: nw.DataFrame,
     key: str | Sequence[str],
 ) -> list[tuple[Any, ...]]:
     """Return key value combinations that occur more than once in a frame."""
-    counts = key_counts(frame, key)
+    counts = key_counts(df, key)
     return [values for values, count in counts.items() if count > 1]
 
 
-def assert_unique_keys(frame: nw.DataFrame, keys: list[str], label: str) -> None:
-    dupes = duplicate_keys(frame, keys)
+def assert_unique_keys(df: nw.DataFrame, keys: list[str], label: str) -> None:
+    dupes = duplicate_keys(df, keys)
     if dupes:
         raise ValueError(
             f"`{label}` has duplicate values for key {keys}: {dupes[:5]}. "
