@@ -5,7 +5,7 @@ from typing import Any
 
 import narwhals.stable.v2 as nw
 
-from frameworthy._constants import NULL_KEY
+from ._constants import NULL_KEY
 
 
 def _normalize_keys(key: str | Sequence[str]) -> list[str]:
@@ -53,3 +53,34 @@ def duplicate_keys(
     """Return key value combinations that occur more than once in a frame."""
     counts = key_counts(frame, key)
     return [values for values, count in counts.items() if count > 1]
+
+
+def assert_unique_keys(frame: nw.DataFrame, keys: list[str], label: str) -> None:
+    dupes = duplicate_keys(frame, keys)
+    if dupes:
+        raise ValueError(
+            f"`{label}` has duplicate values for key {keys}: {dupes[:5]}. "
+            "Paired comparisons require exactly one row per key on both sides."
+        )
+
+
+def join_paired(
+    before: nw.DataFrame,
+    after: nw.DataFrame,
+    key: str | Sequence[str],
+    columns: Sequence[str],
+) -> nw.DataFrame:
+    """Align `before` and `after` on `key`, keeping only matched pairs.
+
+    Both frames must have at most one row per key value; unmatched rows
+    (present on only one side) are dropped. `columns` from `after` are
+    suffixed with `_after` in the returned frame.
+    """
+    keys = _normalize_keys(key)
+    assert_unique_keys(before, keys, "before")
+    assert_unique_keys(after, keys, "after")
+
+    before_selected = before.select(*keys, *columns)
+    after_selected = after.select(*keys, *columns)
+
+    return before_selected.join(after_selected, on=keys, how="inner", suffix="_after")
