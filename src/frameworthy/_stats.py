@@ -1,8 +1,54 @@
-from typing import Literal
-
 import numpy as np
 
-Decision = Literal["equivalent", "changed", "inconclusive"]
+from ._constants import Decision
+
+
+def _validate_bootstrap_args(alpha: float, n_resamples: int) -> None:
+    if not 0 < alpha < 0.5:
+        raise ValueError(f"`alpha` must be in (0, 0.5), got {alpha}.")
+    if n_resamples < 1:
+        raise ValueError(f"`n_resamples` must be positive, got {n_resamples}.")
+
+
+def _bootstrap_paired_diffs(
+    before: np.ndarray,
+    after: np.ndarray,
+    *,
+    n_resamples: int,
+    rng: np.random.Generator,
+) -> tuple[float, np.ndarray]:
+    if len(before) != len(after):
+        raise ValueError(
+            "Paired bootstrap requires `before` and `after` to have the "
+            f"same length, got {len(before)} and {len(after)}."
+        )
+    if len(before) < 2:
+        raise ValueError("At least 2 paired observations are required to bootstrap.")
+
+    diffs = after - before
+    observed = float(diffs.mean())
+    idx = rng.integers(0, len(diffs), size=(n_resamples, len(diffs)))
+    boot_diffs = diffs[idx].mean(axis=1)
+
+    return observed, boot_diffs
+
+
+def _bootstrap_unpaired_diffs(
+    before: np.ndarray,
+    after: np.ndarray,
+    *,
+    n_resamples: int,
+    rng: np.random.Generator,
+) -> tuple[float, np.ndarray]:
+    if len(before) < 2 or len(after) < 2:
+        raise ValueError("At least 2 observations per side are required to bootstrap.")
+
+    observed = float(after.mean() - before.mean())
+    before_idx = rng.integers(0, len(before), size=(n_resamples, len(before)))
+    after_idx = rng.integers(0, len(after), size=(n_resamples, len(after)))
+    boot_diffs = after[after_idx].mean(axis=1) - before[before_idx].mean(axis=1)
+
+    return observed, boot_diffs
 
 
 def bootstrap_mean_diff_ci(
@@ -24,37 +70,16 @@ def bootstrap_mean_diff_ci(
     Returns `(observed_diff, ci_low, ci_high)` where the interval is the
     `(1 - 2 * alpha)` percentile bootstrap CI.
     """
-    if not 0 < alpha < 0.5:
-        raise ValueError(f"`alpha` must be in (0, 0.5), got {alpha}.")
-    if n_resamples < 1:
-        raise ValueError(f"`n_resamples` must be positive, got {n_resamples}.")
+    _validate_bootstrap_args(alpha, n_resamples)
 
     if paired:
-        if len(before) != len(after):
-            raise ValueError(
-                "Paired bootstrap requires `before` and `after` to have the "
-                f"same length, got {len(before)} and {len(after)}."
-            )
-        if len(before) < 2:
-            raise ValueError(
-                "At least 2 paired observations are required to bootstrap."
-            )
-
-        diffs = after - before
-        observed = float(diffs.mean())
-        idx = rng.integers(0, len(diffs), size=(n_resamples, len(diffs)))
-        boot_diffs = diffs[idx].mean(axis=1)
-
+        observed, boot_diffs = _bootstrap_paired_diffs(
+            before, after, n_resamples=n_resamples, rng=rng
+        )
     else:
-        if len(before) < 2 or len(after) < 2:
-            raise ValueError(
-                "At least 2 observations per side are required to bootstrap."
-            )
-
-        observed = float(after.mean() - before.mean())
-        before_idx = rng.integers(0, len(before), size=(n_resamples, len(before)))
-        after_idx = rng.integers(0, len(after), size=(n_resamples, len(after)))
-        boot_diffs = after[after_idx].mean(axis=1) - before[before_idx].mean(axis=1)
+        observed, boot_diffs = _bootstrap_unpaired_diffs(
+            before, after, n_resamples=n_resamples, rng=rng
+        )
 
     ci_low, ci_high = np.percentile(boot_diffs, [100 * alpha, 100 * (1 - alpha)])
     return observed, float(ci_low), float(ci_high)
@@ -72,7 +97,7 @@ def classify_equivalence(ci_low: float, ci_high: float, within: float) -> Decisi
         raise ValueError(f"`within` must be positive, got {within}.")
 
     if -within <= ci_low and ci_high <= within:
-        return "equivalent"
+        return Decision.EQUIVALENT
     if ci_high < -within or ci_low > within:
-        return "changed"
-    return "inconclusive"
+        return Decision.CHANGED
+    return Decision.INCONCLUSIVE
