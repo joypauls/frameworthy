@@ -1,7 +1,7 @@
 import pytest
 
-from frameworthy._constants import Decision
 from frameworthy._errors import FrameworthyAssertionError
+from frameworthy.decision import Decision
 from frameworthy.results import EquivalenceResult
 
 

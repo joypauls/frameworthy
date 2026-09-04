@@ -1,39 +1,14 @@
 from collections.abc import Sequence
 
-import narwhals.stable.v2 as nw
 import numpy as np
 from narwhals.stable.v2.typing import IntoDataFrame
 
+from ._arrays import paired_values_from_columns, values_from_two_frames
 from ._backend import to_narwhals_frame
-from ._pairing import _normalize_keys, assert_unique_keys, join_paired
+from ._constants import DEFAULT_ALPHA, DEFAULT_N_RESAMPLES
+from ._pairing import _normalize_keys, assert_unique_keys
 from ._stats import bootstrap_mean_diff_ci, classify_equivalence
 from .results import EquivalenceResult
-
-
-def _assert_column_exists(columns: Sequence[str], column: str, label: str) -> None:
-    if column not in columns:
-        raise KeyError(f"Column `{column}` not found in `{label}`.")
-
-
-def _assert_min_count(n: int, min_count: int, label: str) -> None:
-    if n == 0:
-        raise ValueError(f"No usable (non-null) values found for {label}.")
-    if n < min_count:
-        raise ValueError(
-            f"At least {min_count} usable (non-null) values are required for "
-            f"{label}, got {n}."
-        )
-
-
-def _assert_equal_pairs(
-    before_values: np.ndarray, after_values: np.ndarray, label: str
-) -> None:
-    if len(before_values) != len(after_values):
-        raise ValueError(
-            f"Paired comparison for {label} produced unequal numbers of usable "
-            f"before ({len(before_values)}) and after ({len(after_values)}) "
-            "values; before/after values must stay aligned pair-by-pair."
-        )
 
 
 class MeanCheck:
@@ -57,8 +32,8 @@ class MeanCheck:
     def equivalent(
         self,
         within: float,
-        alpha: float = 0.05,
-        n_resamples: int = 10_000,
+        alpha: float = DEFAULT_ALPHA,
+        n_resamples: int = DEFAULT_N_RESAMPLES,
         random_state: int | np.random.Generator | None = None,
     ) -> EquivalenceResult:
         """Test whether the mean difference is equivalent within `within`.
@@ -141,7 +116,21 @@ class Check:
                     "`before=<column name>` to compare two columns in that "
                     "dataframe."
                 )
-            return self._mean_same_frame(after_column=column, before_column=before)
+            if before == column:
+                raise ValueError(
+                    "`before` must name a different column than the one being "
+                    f"compared, got `{column}` for both."
+                )
+
+            before_values, after_values = paired_values_from_columns(
+                self._after, before, column, "df"
+            )
+            return MeanCheck(
+                column=column,
+                paired=True,
+                before_values=before_values,
+                after_values=after_values,
+            )
 
         if before is not None:
             raise ValueError(
@@ -150,58 +139,9 @@ class Check:
                 "instead."
             )
 
-        return self._mean_two_frames(column)
-
-    def _mean_same_frame(self, after_column: str, before_column: str) -> MeanCheck:
-        if after_column == before_column:
-            raise ValueError(
-                "`before` must name a different column than the one being "
-                f"compared, got `{after_column}` for both."
-            )
-        _assert_column_exists(self._after.columns, after_column, "df")
-        _assert_column_exists(self._after.columns, before_column, "df")
-
-        paired = self._after.select(before_column, after_column).drop_nulls(
-            subset=[before_column, after_column]
+        before_values, after_values, paired = values_from_two_frames(
+            self._before, self._after, column, self._paired_by
         )
-        before_values = paired[before_column].to_numpy()
-        after_values = paired[after_column].to_numpy()
-
-        _assert_equal_pairs(before_values, after_values, "df")
-        _assert_min_count(len(before_values), 2, "df")
-
-        return MeanCheck(
-            column=after_column,
-            paired=True,
-            before_values=before_values,
-            after_values=after_values,
-        )
-
-    def _mean_two_frames(self, column: str) -> MeanCheck:
-        assert self._before is not None
-        _assert_column_exists(self._before.columns, column, "before")
-        _assert_column_exists(self._after.columns, column, "after")
-
-        if self._paired_by is not None:
-            after_column = f"{column}_after"
-            joined: nw.DataFrame = join_paired(
-                self._before, self._after, self._paired_by, [column]
-            ).drop_nulls(subset=[column, after_column])
-
-            before_values = joined[column].to_numpy()
-            after_values = joined[after_column].to_numpy()
-
-            _assert_equal_pairs(before_values, after_values, "before/after")
-            _assert_min_count(len(before_values), 2, "before/after")
-            paired = True
-        else:
-            before_values = self._before.select(column).drop_nulls()[column].to_numpy()
-            after_values = self._after.select(column).drop_nulls()[column].to_numpy()
-
-            _assert_min_count(len(before_values), 2, "before")
-            _assert_min_count(len(after_values), 2, "after")
-            paired = False
-
         return MeanCheck(
             column=column,
             paired=paired,

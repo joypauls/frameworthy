@@ -1,6 +1,6 @@
 import numpy as np
 
-from ._constants import Decision
+from .decision import Decision
 
 
 def _validate_bootstrap_args(alpha: float, n_resamples: int) -> None:

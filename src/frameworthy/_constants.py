@@ -1,11 +1,4 @@
-from enum import Enum
-
 NULL_KEY = object()
 
-
-class Decision(str, Enum):
-    """Classification decision for equivalence testing."""
-
-    EQUIVALENT = "equivalent"
-    CHANGED = "changed"
-    INCONCLUSIVE = "inconclusive"
+DEFAULT_ALPHA = 0.05
+DEFAULT_N_RESAMPLES = 10_000

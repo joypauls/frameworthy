@@ -1,8 +1,8 @@
 import warnings
 from dataclasses import dataclass
 
-from ._constants import Decision
 from ._errors import FrameworthyAssertionError
+from .decision import Decision
 
 
 @dataclass(frozen=True)
