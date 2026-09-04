@@ -1,7 +1,7 @@
 [project]
 name = "frameworthy"
 version = "0.1.2"
-description = "Uncertainty-aware regression testing for dataframes and metrics in a lightweight package."
+description = "Statistical regression testing for dataframes and metrics in a lightweight package."
 readme = "README.md"
 authors = [
     { name = "joypauls", email = "joypaulsen3@gmail.com" }
