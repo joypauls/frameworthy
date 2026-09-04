@@ -31,7 +31,7 @@ def key_counts(
     df: nw.DataFrame,
     key: str | Sequence[str],
 ) -> Counter[tuple[Any, ...]]:
-    """Count occurrences of each distinct key value combination in a frame."""
+    """Count occurrences of each distinct key value combination in a dataframe."""
     keys = _normalize_keys(key)
     grouped = df.group_by(*keys, drop_null_keys=False).agg(
         nw.len().alias("__frameworthy_count")
@@ -70,12 +70,7 @@ def join_paired(
     key: str | Sequence[str],
     columns: Sequence[str],
 ) -> nw.DataFrame:
-    """Align `before` and `after` on `key`, keeping only matched pairs.
-
-    Both frames must have at most one row per key value; unmatched rows
-    (present on only one side) are dropped. `columns` from `after` are
-    suffixed with `_after` in the returned frame.
-    """
+    """Align `before` and `after` on `key`, keeping only matched pairs."""
     keys = _normalize_keys(key)
     assert_unique_keys(before, keys, "before")
     assert_unique_keys(after, keys, "after")
