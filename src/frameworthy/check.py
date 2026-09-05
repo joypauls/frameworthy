@@ -7,7 +7,7 @@ from ._arrays import paired_values_from_columns, values_from_two_frames
 from ._backend import to_narwhals_frame
 from ._constants import DEFAULT_ALPHA, DEFAULT_N_RESAMPLES
 from ._pairing import _normalize_keys, assert_unique_keys
-from ._stats import bootstrap_mean_diff_ci, classify_equivalence
+from ._stats import classify_equivalence, mean_diff_ci
 from .results import EquivalenceResult
 
 
@@ -38,25 +38,33 @@ class MeanCheck:
     ) -> EquivalenceResult:
         """Test whether the mean difference is equivalent within `within`.
 
-        Uses percentile bootstrap resampling to build a `(1 - 2 * alpha)`
-        confidence interval for the mean difference (after - before), then
-        classifies it against the `within` margin as `equivalent`,
-        `changed`, or `inconclusive`. See `frameworthy._stats` for the
-        decision rule.
+        Builds a `(1 - 2 * alpha)` confidence interval for the mean
+        difference (after - before), then classifies it against the
+        `within` margin as `equivalent`, `changed`, or `inconclusive`. See
+        `frameworthy._stats` for the decision rule.
+
+        The mean has a closed-form interval, so this always uses the
+        analytical fast path (a t-interval for paired differences, or a
+        Welch/unequal-variance t-interval for independent samples) rather
+        than bootstrap resampling; `n_resamples` and `random_state` are
+        accepted for API stability but unused here. Bootstrap resampling
+        remains available in `frameworthy._stats` for statistics without a
+        closed-form interval.
         """
         rng = np.random.default_rng(random_state)
-        diff, ci_low, ci_high = bootstrap_mean_diff_ci(
+        diff, ci_low, ci_high = mean_diff_ci(
             self._before_values,
             self._after_values,
             paired=self._paired,
             alpha=alpha,
             n_resamples=n_resamples,
             rng=rng,
+            method="analytical",
         )
-        verdict = classify_equivalence(ci_low, ci_high, within)
+        result = classify_equivalence(ci_low, ci_high, within)
 
         return EquivalenceResult(
-            verdict=verdict,
+            verdict=result,
             column=self._column,
             statistic="mean",
             paired=self._paired,
@@ -69,7 +77,7 @@ class MeanCheck:
             within=within,
             n_before=len(self._before_values),
             n_after=len(self._after_values),
-            n_resamples=n_resamples,
+            n_resamples=0,
         )
 
 
