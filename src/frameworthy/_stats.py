@@ -1,8 +1,7 @@
-from typing import Literal
-
 import numpy as np
 from scipy import stats
 
+from ._constants import DEFAULT_INFERENCE_METHOD, InferenceMethod
 from .decision import Decision
 
 
@@ -181,7 +180,7 @@ def mean_diff_ci(
     alpha: float,
     n_resamples: int,
     rng: np.random.Generator,
-    method: Literal["analytical", "bootstrap"] = "analytical",
+    method: InferenceMethod = DEFAULT_INFERENCE_METHOD,
 ) -> tuple[float, float, float]:
     """Select an inference strategy and compute the mean difference CI.
 
