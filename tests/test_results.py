@@ -5,9 +5,9 @@ from frameworthy.decision import Decision
 from frameworthy.results import EquivalenceResult
 
 
-def _make_result(verdict: Decision, **overrides) -> EquivalenceResult:
+def _make_result(decision: Decision, **overrides) -> EquivalenceResult:
     defaults = {
-        "verdict": verdict,
+        "decision": decision,
         "column": "revenue",
         "statistic": "mean",
         "paired": True,

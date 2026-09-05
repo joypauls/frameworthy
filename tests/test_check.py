@@ -20,7 +20,7 @@ def test_paired_equivalent_within_margin(frame_factory):
         .equivalent(within=2.0, alpha=0.05, random_state=0)
     )
 
-    assert result.verdict == "equivalent"
+    assert result.decision == "equivalent"
     assert result.passed is True
     assert result.paired is True
     assert result.n_before == result.n_after == 200
@@ -42,7 +42,7 @@ def test_paired_changed_beyond_margin(frame_factory):
         .equivalent(within=2.0, alpha=0.05, random_state=0)
     )
 
-    assert result.verdict == "changed"
+    assert result.decision == "changed"
     assert result.passed is False
     with pytest.raises(fw.FrameworthyAssertionError):
         result.raise_for_status()
@@ -63,7 +63,7 @@ def test_paired_inconclusive_with_small_noisy_sample(frame_factory):
         .equivalent(within=2.0, alpha=0.05, random_state=0)
     )
 
-    assert result.verdict == "inconclusive"
+    assert result.decision == "inconclusive"
     with pytest.warns(UserWarning):
         result.raise_for_status()  # should not raise, only warn
 
@@ -100,7 +100,7 @@ def test_unpaired_when_no_paired_by_given(frame_factory):
     assert result.paired is False
     assert result.n_before == 300
     assert result.n_after == 350
-    assert result.verdict == "equivalent"
+    assert result.decision == "equivalent"
 
 
 def test_missing_column_raises_key_error(frame_factory):
@@ -190,7 +190,7 @@ def test_unpaired_equivalent_within_margin(frame_factory):
 
     result = fw.check(after, before=before).mean("revenue").equivalent(within=2.0)
 
-    assert result.verdict == "equivalent"
+    assert result.decision == "equivalent"
     assert result.paired is False
 
 
@@ -201,7 +201,7 @@ def test_unpaired_changed_beyond_margin(frame_factory):
 
     result = fw.check(after, before=before).mean("revenue").equivalent(within=2.0)
 
-    assert result.verdict == "changed"
+    assert result.decision == "changed"
 
 
 def test_unpaired_inconclusive_with_small_noisy_sample(frame_factory):
@@ -211,7 +211,7 @@ def test_unpaired_inconclusive_with_small_noisy_sample(frame_factory):
 
     result = fw.check(after, before=before).mean("revenue").equivalent(within=2.0)
 
-    assert result.verdict == "inconclusive"
+    assert result.decision == "inconclusive"
 
 
 def test_accepts_narwhals_frame_via_backend_helper(frame_factory):
@@ -243,7 +243,7 @@ class TestSameDataframeComparison:
             .equivalent(within=1.0, alpha=0.05, random_state=0)
         )
 
-        assert result.verdict == "equivalent"
+        assert result.decision == "equivalent"
         assert result.paired is True
         assert result.column == "score_after"
         assert result.n_before == result.n_after == 200
@@ -262,7 +262,7 @@ class TestSameDataframeComparison:
             .equivalent(within=1.0, alpha=0.05, random_state=0)
         )
 
-        assert result.verdict == "changed"
+        assert result.decision == "changed"
         with pytest.raises(fw.FrameworthyAssertionError):
             result.raise_for_status()
 

@@ -31,7 +31,7 @@ def test_same_df_paired_check_is_equivalent_for_small_shift(test_df):
         .equivalent(within=0.3, alpha=0.05, random_state=0)
     )
 
-    assert result.verdict == "equivalent"
+    assert result.decision == "equivalent"
     assert result.n_before == result.n_after == len(test_df)
     result.raise_for_status()  # should not raise
 
@@ -49,7 +49,7 @@ def test_two_dataframe_unpaired_check_detects_species_difference(test_df):
         .equivalent(within=1.0, alpha=0.05, random_state=0)
     )
 
-    assert result.verdict == "changed"
+    assert result.decision == "changed"
     assert result.paired is False
     with pytest.raises(fw.FrameworthyAssertionError):
         result.raise_for_status()

@@ -67,10 +67,10 @@ class MeanCheck:
             rng=rng,
             method=method,
         )
-        verdict = classify_equivalence(ci_low, ci_high, within)
+        decision = classify_equivalence(ci_low, ci_high, within)
 
         return EquivalenceResult(
-            verdict=verdict,
+            decision=decision,
             column=self._column,
             statistic="mean",
             paired=self._paired,

@@ -13,7 +13,7 @@ class EquivalenceResult:
     constructed directly.
     """
 
-    verdict: Decision
+    decision: Decision
     column: str
     statistic: str
     paired: bool
@@ -31,7 +31,7 @@ class EquivalenceResult:
     @property
     def passed(self) -> bool:
         """Whether the evidence supports equivalence within the margin."""
-        return self.verdict == Decision.EQUIVALENT
+        return self.decision == Decision.EQUIVALENT
 
     def __str__(self) -> str:
         ci_pct = round((1 - 2 * self.alpha) * 100)
@@ -41,7 +41,7 @@ class EquivalenceResult:
             else f"unpaired, n_before={self.n_before}, n_after={self.n_after}"
         )
         return (
-            f"{self.verdict.value.upper()}: {self.statistic}({self.column}) "
+            f"{self.decision.value.upper()}: {self.statistic}({self.column}) "
             f"diff (after - before) = {self.diff:+.4g}, "
             f"{ci_pct}% CI = [{self.ci_low:+.4g}, {self.ci_high:+.4g}], "
             f"margin = ±{self.within:g}, alpha = {self.alpha:g}, {pairing}"
@@ -49,7 +49,7 @@ class EquivalenceResult:
 
     def raise_for_status(self) -> None:
         """Raise if the evidence supports a change larger than the margin."""
-        if self.verdict == Decision.CHANGED:
+        if self.decision == Decision.CHANGED:
             raise FrameworthyAssertionError(str(self))
-        if self.verdict == Decision.INCONCLUSIVE:
+        if self.decision == Decision.INCONCLUSIVE:
             warnings.warn(str(self), stacklevel=2)
