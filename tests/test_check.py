@@ -139,6 +139,30 @@ def test_mean_check_uses_analytical_path_with_zero_resamples(frame_factory):
     assert result.n_resamples == 0
 
 
+def test_mean_check_can_opt_into_bootstrap(frame_factory):
+    before = frame_factory({"revenue": [1.0, 2.0, 3.0, 4.0, 5.0]})
+    after = frame_factory({"revenue": [2.0, 3.0, 4.0, 5.0, 6.0]})
+
+    result = (
+        fw.check(after, before=before)
+        .mean("revenue")
+        .equivalent(within=5.0, n_resamples=1000, random_state=0, method="bootstrap")
+    )
+
+    assert result.n_resamples == 1000
+    assert result.diff == pytest.approx(1.0)
+
+
+def test_mean_check_rejects_unknown_method(frame_factory):
+    before = frame_factory({"revenue": [1.0, 2.0, 3.0]})
+    after = frame_factory({"revenue": [2.0, 3.0, 4.0]})
+
+    with pytest.raises(ValueError, match="Unknown inference"):
+        fw.check(after, before=before).mean("revenue").equivalent(
+            within=5.0, method="magic"
+        )
+
+
 def test_mean_check_is_deterministic_regardless_of_random_state(frame_factory):
     rng = np.random.default_rng(6)
     ids = list(range(50))

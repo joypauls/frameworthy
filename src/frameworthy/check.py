@@ -5,7 +5,12 @@ from narwhals.stable.v2.typing import IntoDataFrame
 
 from ._arrays import paired_values_from_columns, values_from_two_frames
 from ._backend import to_narwhals_frame
-from ._constants import DEFAULT_ALPHA, DEFAULT_N_RESAMPLES
+from ._constants import (
+    DEFAULT_ALPHA,
+    DEFAULT_INFERENCE_METHOD,
+    DEFAULT_N_RESAMPLES,
+    InferenceMethod,
+)
 from ._pairing import _normalize_keys, assert_unique_keys
 from ._stats import classify_equivalence, mean_diff_ci
 from .results import EquivalenceResult
@@ -35,6 +40,7 @@ class MeanCheck:
         alpha: float = DEFAULT_ALPHA,
         n_resamples: int = DEFAULT_N_RESAMPLES,
         random_state: int | np.random.Generator | None = None,
+        method: InferenceMethod = DEFAULT_INFERENCE_METHOD,
     ) -> EquivalenceResult:
         """Test whether the mean difference is equivalent within `within`.
 
@@ -43,13 +49,13 @@ class MeanCheck:
         `within` margin as `equivalent`, `changed`, or `inconclusive`. See
         `frameworthy._stats` for the decision rule.
 
-        The mean has a closed-form interval, so this always uses the
-        analytical fast path (a t-interval for paired differences, or a
-        Welch/unequal-variance t-interval for independent samples) rather
-        than bootstrap resampling; `n_resamples` and `random_state` are
-        accepted for API stability but unused here. Bootstrap resampling
-        remains available in `frameworthy._stats` for statistics without a
-        closed-form interval.
+        The mean has a closed-form interval, so `method` defaults to
+        `"analytical"` (a t-interval for paired differences, or a Welch/
+        unequal-variance t-interval for independent samples) instead of
+        bootstrap resampling. Pass `method="bootstrap"` to use percentile
+        bootstrap resampling instead, in which case `n_resamples` and
+        `random_state` control the resampling; both are unused for the
+        analytical path.
         """
         rng = np.random.default_rng(random_state)
         diff, ci_low, ci_high = mean_diff_ci(
@@ -59,12 +65,12 @@ class MeanCheck:
             alpha=alpha,
             n_resamples=n_resamples,
             rng=rng,
-            method="analytical",
+            method=method,
         )
-        result = classify_equivalence(ci_low, ci_high, within)
+        verdict = classify_equivalence(ci_low, ci_high, within)
 
         return EquivalenceResult(
-            verdict=result,
+            verdict=verdict,
             column=self._column,
             statistic="mean",
             paired=self._paired,
@@ -77,7 +83,7 @@ class MeanCheck:
             within=within,
             n_before=len(self._before_values),
             n_after=len(self._after_values),
-            n_resamples=0,
+            n_resamples=n_resamples if method == "bootstrap" else 0,
         )
 
 
