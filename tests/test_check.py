@@ -130,6 +130,66 @@ def test_random_state_makes_result_reproducible(frame_factory):
     assert result_a.ci_high == result_b.ci_high
 
 
+def test_mean_check_uses_analytical_path_with_zero_resamples(frame_factory):
+    before = frame_factory({"revenue": [1.0, 2.0, 3.0, 4.0]})
+    after = frame_factory({"revenue": [2.0, 3.0, 4.0, 5.0]})
+
+    result = fw.check(after, before=before).mean("revenue").equivalent(within=5.0)
+
+    assert result.n_resamples == 0
+
+
+def test_mean_check_is_deterministic_regardless_of_random_state(frame_factory):
+    rng = np.random.default_rng(6)
+    ids = list(range(50))
+    before_revenue = rng.normal(100.0, 5.0, size=50)
+    after_revenue = before_revenue + rng.normal(0.5, 1.0, size=50)
+
+    before = frame_factory({"customer_id": ids, "revenue": before_revenue})
+    after = frame_factory({"customer_id": ids, "revenue": after_revenue})
+
+    check_a = fw.check(after, before=before, paired_by="customer_id").mean("revenue")
+    check_b = fw.check(after, before=before, paired_by="customer_id").mean("revenue")
+
+    result_a = check_a.equivalent(within=2.0, random_state=1)
+    result_b = check_b.equivalent(within=2.0, random_state=999)
+
+    assert result_a.diff == result_b.diff
+    assert result_a.ci_low == result_b.ci_low
+    assert result_a.ci_high == result_b.ci_high
+
+
+def test_unpaired_equivalent_within_margin(frame_factory):
+    rng = np.random.default_rng(20)
+    before = frame_factory({"revenue": rng.normal(100.0, 5.0, size=200)})
+    after = frame_factory({"revenue": rng.normal(100.2, 5.0, size=220)})
+
+    result = fw.check(after, before=before).mean("revenue").equivalent(within=2.0)
+
+    assert result.verdict == "equivalent"
+    assert result.paired is False
+
+
+def test_unpaired_changed_beyond_margin(frame_factory):
+    rng = np.random.default_rng(21)
+    before = frame_factory({"revenue": rng.normal(100.0, 5.0, size=200)})
+    after = frame_factory({"revenue": rng.normal(110.0, 5.0, size=220)})
+
+    result = fw.check(after, before=before).mean("revenue").equivalent(within=2.0)
+
+    assert result.verdict == "changed"
+
+
+def test_unpaired_inconclusive_with_small_noisy_sample(frame_factory):
+    rng = np.random.default_rng(0)
+    before = frame_factory({"revenue": rng.normal(100.0, 5.0, size=6)})
+    after = frame_factory({"revenue": rng.normal(101.0, 5.0, size=6)})
+
+    result = fw.check(after, before=before).mean("revenue").equivalent(within=2.0)
+
+    assert result.verdict == "inconclusive"
+
+
 def test_accepts_narwhals_frame_via_backend_helper(frame_factory):
     # sanity check that check() works when given already-native frames,
     # matching how to_narwhals_frame is used elsewhere in the codebase
