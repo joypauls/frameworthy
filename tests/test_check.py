@@ -163,6 +163,17 @@ def test_mean_check_rejects_unknown_method(frame_factory):
         )
 
 
+def test_mean_check_rejects_invalid_alpha_before_computing_ci(frame_factory):
+    # alpha is validated eagerly by `InferenceConfig` as soon as
+    # `.equivalent()` is called, rather than only failing deep inside CI
+    # computation.
+    before = frame_factory({"revenue": [1.0, 2.0, 3.0]})
+    after = frame_factory({"revenue": [2.0, 3.0, 4.0]})
+
+    with pytest.raises(fw.InvalidParameterError, match="alpha"):
+        fw.check(after, before=before).mean("revenue").equivalent(within=5.0, alpha=0.6)
+
+
 def test_mean_check_is_deterministic_regardless_of_random_state(frame_factory):
     rng = np.random.default_rng(6)
     ids = list(range(50))

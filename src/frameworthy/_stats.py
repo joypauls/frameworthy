@@ -2,25 +2,15 @@ import numpy as np
 from scipy import stats
 
 from ._constants import DEFAULT_INFERENCE_METHOD, Direction, InferenceMethod, Interval
-from ._errors import (
-    InsufficientDataError,
-    InvalidColumnDataError,
-    InvalidParameterError,
+from ._errors import InvalidParameterError
+from ._validation import (
+    validate_alpha,
+    validate_equal_length,
+    validate_method,
+    validate_min_observations,
+    validate_n_resamples,
 )
 from .decision import Decision
-
-
-def _validate_alpha(alpha: float) -> None:
-    if not 0 < alpha < 0.5:
-        raise InvalidParameterError(f"`alpha` must be in (0, 0.5), got {alpha}.")
-
-
-def _validate_bootstrap_args(alpha: float, n_resamples: int) -> None:
-    _validate_alpha(alpha)
-    if n_resamples < 1:
-        raise InvalidParameterError(
-            f"`n_resamples` must be positive, got {n_resamples}."
-        )
 
 
 def wilson_interval(count: int, n: int, alpha: float) -> tuple[float, float]:
@@ -33,7 +23,7 @@ def wilson_interval(count: int, n: int, alpha: float) -> tuple[float, float]:
 
     Returns `(low, high)`.
     """
-    _validate_alpha(alpha)
+    validate_alpha(alpha)
     if n < 1:
         raise InvalidParameterError(f"`n` must be positive, got {n}.")
     if not 0 <= count <= n:
@@ -52,15 +42,10 @@ def _bootstrap_paired_diffs(
     n_resamples: int,
     rng: np.random.Generator,
 ) -> tuple[float, np.ndarray]:
-    if len(before) != len(after):
-        raise InvalidColumnDataError(
-            "Paired bootstrap requires `before` and `after` to have the "
-            f"same length, got {len(before)} and {len(after)}."
-        )
-    if len(before) < 2:
-        raise InsufficientDataError(
-            "At least 2 paired observations are required to bootstrap."
-        )
+    validate_equal_length(before, after, context="bootstrap")
+    validate_min_observations(
+        len(before), 2, context="paired observations to bootstrap"
+    )
 
     diffs = after - before
     observed = float(diffs.mean())
@@ -77,10 +62,9 @@ def _bootstrap_unpaired_diffs(
     n_resamples: int,
     rng: np.random.Generator,
 ) -> tuple[float, np.ndarray]:
-    if len(before) < 2 or len(after) < 2:
-        raise InsufficientDataError(
-            "At least 2 observations per side are required to bootstrap."
-        )
+    validate_min_observations(
+        min(len(before), len(after)), 2, context="observations per side to bootstrap"
+    )
 
     observed = float(after.mean() - before.mean())
     before_idx = rng.integers(0, len(before), size=(n_resamples, len(before)))
@@ -110,7 +94,8 @@ def bootstrap_mean_diff_ci(
     Returns `(observed_diff, ci_low, ci_high)` where the interval is the
     `(1 - 2 * alpha)` percentile bootstrap CI.
     """
-    _validate_bootstrap_args(alpha, n_resamples)
+    validate_alpha(alpha)
+    validate_n_resamples(n_resamples)
 
     if paired:
         observed, boot_diffs = _bootstrap_paired_diffs(
@@ -144,16 +129,12 @@ def paired_mean_diff_ci(
     element-wise. Returns `(observed_diff, ci_low, ci_high)` where the
     interval is the `(1 - 2 * alpha)` confidence interval.
     """
-    if len(before) != len(after):
-        raise InvalidColumnDataError(
-            "Paired comparison requires `before` and `after` to have the "
-            f"same length, got {len(before)} and {len(after)}."
-        )
-    if len(before) < 2:
-        raise InsufficientDataError(
-            "At least 2 paired observations are required for an analytical "
-            "confidence interval."
-        )
+    validate_equal_length(before, after, context="comparison")
+    validate_min_observations(
+        len(before),
+        2,
+        context="paired observations for an analytical confidence interval",
+    )
 
     diffs = after - before
     n = len(diffs)
@@ -170,11 +151,11 @@ def independent_mean_diff_ci(
     `after.mean() - before.mean()` and the interval is the `(1 - 2 * alpha)`
     confidence interval.
     """
-    if len(before) < 2 or len(after) < 2:
-        raise InsufficientDataError(
-            "At least 2 observations per side are required for an analytical "
-            "confidence interval."
-        )
+    validate_min_observations(
+        min(len(before), len(after)),
+        2,
+        context="observations per side for an analytical confidence interval",
+    )
 
     n_before, n_after = len(before), len(after)
     se_sq_before = float(before.var(ddof=1)) / n_before
@@ -210,7 +191,7 @@ def analytical_mean_diff_ci(
     Returns `(observed_diff, ci_low, ci_high)` where the interval is the
     `(1 - 2 * alpha)` confidence interval.
     """
-    _validate_alpha(alpha)
+    validate_alpha(alpha)
 
     if paired:
         return paired_mean_diff_ci(before, after, alpha=alpha)
@@ -235,18 +216,17 @@ def mean_diff_ci(
     fallback (kept available for future, arbitrary metrics that don't have
     a closed-form interval).
     """
+    validate_method(method)
     if method == "analytical":
         return analytical_mean_diff_ci(before, after, paired=paired, alpha=alpha)
-    if method == "bootstrap":
-        return bootstrap_mean_diff_ci(
-            before,
-            after,
-            paired=paired,
-            alpha=alpha,
-            n_resamples=n_resamples,
-            rng=rng,
-        )
-    raise InvalidParameterError(f"Unknown inference `method`: {method!r}.")
+    return bootstrap_mean_diff_ci(
+        before,
+        after,
+        paired=paired,
+        alpha=alpha,
+        n_resamples=n_resamples,
+        rng=rng,
+    )
 
 
 def independent_rate_diff_ci(
@@ -267,12 +247,12 @@ def independent_rate_diff_ci(
     `after.mean() - before.mean()` and the interval is the `(1 - 2 * alpha)`
     confidence interval.
     """
-    _validate_alpha(alpha)
-    if len(before) < 2 or len(after) < 2:
-        raise InsufficientDataError(
-            "At least 2 observations per side are required for an analytical "
-            "confidence interval."
-        )
+    validate_alpha(alpha)
+    validate_min_observations(
+        min(len(before), len(after)),
+        2,
+        context="observations per side for an analytical confidence interval",
+    )
 
     n_before, n_after = len(before), len(after)
     p_before = float(before.mean())
@@ -335,17 +315,13 @@ def paired_rate_diff_ci(
     `after.mean() - before.mean()` and the interval is the `(1 - 2 * alpha)`
     confidence interval.
     """
-    _validate_alpha(alpha)
-    if len(before) != len(after):
-        raise InvalidColumnDataError(
-            "Paired comparison requires `before` and `after` to have the "
-            f"same length, got {len(before)} and {len(after)}."
-        )
-    if len(before) < 2:
-        raise InsufficientDataError(
-            "At least 2 paired observations are required for an analytical "
-            "confidence interval."
-        )
+    validate_alpha(alpha)
+    validate_equal_length(before, after, context="comparison")
+    validate_min_observations(
+        len(before),
+        2,
+        context="paired observations for an analytical confidence interval",
+    )
 
     n = len(before)
     p_before = float(before.mean())
@@ -392,9 +368,11 @@ def analytical_rate_diff_ci(
 
     Returns `(observed_diff, ci_low, ci_high)` where the interval is the
     `(1 - 2 * alpha)` confidence interval.
-    """
-    _validate_alpha(alpha)
 
+    `alpha` is validated by whichever of `paired_rate_diff_ci`/
+    `independent_rate_diff_ci` this dispatches to, so it isn't re-validated
+    here.
+    """
     if paired:
         return paired_rate_diff_ci(before, after, alpha=alpha)
     return independent_rate_diff_ci(before, after, alpha=alpha)
@@ -419,18 +397,17 @@ def rate_diff_ci(
     bounded array but doesn't get the boundary-case benefits of the Wilson
     interval.
     """
+    validate_method(method)
     if method == "analytical":
         return analytical_rate_diff_ci(before, after, paired=paired, alpha=alpha)
-    if method == "bootstrap":
-        return bootstrap_mean_diff_ci(
-            before,
-            after,
-            paired=paired,
-            alpha=alpha,
-            n_resamples=n_resamples,
-            rng=rng,
-        )
-    raise InvalidParameterError(f"Unknown inference `method`: {method!r}.")
+    return bootstrap_mean_diff_ci(
+        before,
+        after,
+        paired=paired,
+        alpha=alpha,
+        n_resamples=n_resamples,
+        rng=rng,
+    )
 
 
 def classify_equivalence(ci_low: float, ci_high: float, within: float) -> Decision:

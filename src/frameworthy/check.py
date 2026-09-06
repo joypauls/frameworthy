@@ -26,6 +26,7 @@ from ._stats import (
     mean_diff_ci,
     rate_diff_ci,
 )
+from ._validation import InferenceConfig
 from .results import ChangeResult, EquivalenceResult
 
 
@@ -38,25 +39,21 @@ def _equivalence_result(
     before_values: np.ndarray,
     after_values: np.ndarray,
     within: float,
-    alpha: float,
-    n_resamples: int,
-    random_state: int | np.random.Generator | None,
-    method: InferenceMethod,
+    inference: InferenceConfig,
 ) -> EquivalenceResult:
     """Shared implementation behind `MeanCheck.equivalent()` and
     `RateCheck.equivalent()`: run `diff_func` (either `mean_diff_ci` or
     `rate_diff_ci`, which share a signature), classify the resulting CI,
     and package everything into an `EquivalenceResult`.
     """
-    rng = np.random.default_rng(random_state)
     diff, ci_low, ci_high = diff_func(
         before_values,
         after_values,
         paired=paired,
-        alpha=alpha,
-        n_resamples=n_resamples,
-        rng=rng,
-        method=method,
+        alpha=inference.alpha,
+        n_resamples=inference.n_resamples,
+        rng=inference.rng,
+        method=inference.method,
     )
     decision = classify_equivalence(ci_low, ci_high, within)
 
@@ -70,11 +67,11 @@ def _equivalence_result(
         diff=diff,
         ci_low=ci_low,
         ci_high=ci_high,
-        alpha=alpha,
+        alpha=inference.alpha,
         within=within,
         n_before=len(before_values),
         n_after=len(after_values),
-        n_resamples=n_resamples if method == "bootstrap" else 0,
+        n_resamples=inference.reported_n_resamples,
     )
 
 
@@ -88,10 +85,7 @@ def _change_result(
     after_values: np.ndarray,
     threshold: float,
     direction: Direction,
-    alpha: float,
-    n_resamples: int,
-    random_state: int | np.random.Generator | None,
-    method: InferenceMethod,
+    inference: InferenceConfig,
 ) -> ChangeResult:
     """Shared implementation behind `MeanCheck.change_greater_than()`,
     `MeanCheck.change_less_than()`, and their `RateCheck` counterparts: run
@@ -104,15 +98,14 @@ def _change_result(
     one-sided confidence bound, which is exactly what a one-sided directional
     claim needs.
     """
-    rng = np.random.default_rng(random_state)
     diff, ci_low, ci_high = diff_func(
         before_values,
         after_values,
         paired=paired,
-        alpha=alpha,
-        n_resamples=n_resamples,
-        rng=rng,
-        method=method,
+        alpha=inference.alpha,
+        n_resamples=inference.n_resamples,
+        rng=inference.rng,
+        method=inference.method,
     )
     decision = classify_change_bound(ci_low, ci_high, threshold, direction=direction)
 
@@ -128,10 +121,10 @@ def _change_result(
         ci_high=ci_high,
         threshold=threshold,
         direction=direction,
-        alpha=alpha,
+        alpha=inference.alpha,
         n_before=len(before_values),
         n_after=len(after_values),
-        n_resamples=n_resamples if method == "bootstrap" else 0,
+        n_resamples=inference.reported_n_resamples,
     )
 
 
@@ -176,6 +169,12 @@ class MeanCheck:
         `random_state` control the resampling; both are unused for the
         analytical path.
         """
+        inference = InferenceConfig(
+            alpha=alpha,
+            n_resamples=n_resamples,
+            random_state=random_state,
+            method=method,
+        )
         return _equivalence_result(
             diff_func=mean_diff_ci,
             statistic=Statistic.MEAN,
@@ -184,10 +183,7 @@ class MeanCheck:
             before_values=self._before_values,
             after_values=self._after_values,
             within=within,
-            alpha=alpha,
-            n_resamples=n_resamples,
-            random_state=random_state,
-            method=method,
+            inference=inference,
         )
 
     def change_greater_than(
@@ -211,6 +207,12 @@ class MeanCheck:
         Uses the same `mean_diff_ci` machinery (and `method`/`n_resamples`/
         `random_state` semantics) as `.equivalent()`.
         """
+        inference = InferenceConfig(
+            alpha=alpha,
+            n_resamples=n_resamples,
+            random_state=random_state,
+            method=method,
+        )
         return _change_result(
             diff_func=mean_diff_ci,
             statistic=Statistic.MEAN,
@@ -220,10 +222,7 @@ class MeanCheck:
             after_values=self._after_values,
             threshold=threshold,
             direction="greater_than",
-            alpha=alpha,
-            n_resamples=n_resamples,
-            random_state=random_state,
-            method=method,
+            inference=inference,
         )
 
     def change_less_than(
@@ -247,6 +246,12 @@ class MeanCheck:
         Uses the same `mean_diff_ci` machinery (and `method`/`n_resamples`/
         `random_state` semantics) as `.equivalent()`.
         """
+        inference = InferenceConfig(
+            alpha=alpha,
+            n_resamples=n_resamples,
+            random_state=random_state,
+            method=method,
+        )
         return _change_result(
             diff_func=mean_diff_ci,
             statistic=Statistic.MEAN,
@@ -256,10 +261,7 @@ class MeanCheck:
             after_values=self._after_values,
             threshold=threshold,
             direction="less_than",
-            alpha=alpha,
-            n_resamples=n_resamples,
-            random_state=random_state,
-            method=method,
+            inference=inference,
         )
 
 
@@ -315,6 +317,12 @@ class RateCheck:
         above: a sample with an observed rate of exactly 0 or 1 will still
         produce a degenerate, zero-width bootstrap interval.
         """
+        inference = InferenceConfig(
+            alpha=alpha,
+            n_resamples=n_resamples,
+            random_state=random_state,
+            method=method,
+        )
         return _equivalence_result(
             diff_func=rate_diff_ci,
             statistic=Statistic.RATE,
@@ -323,10 +331,7 @@ class RateCheck:
             before_values=self._before_values,
             after_values=self._after_values,
             within=within,
-            alpha=alpha,
-            n_resamples=n_resamples,
-            random_state=random_state,
-            method=method,
+            inference=inference,
         )
 
     def change_greater_than(
@@ -351,6 +356,12 @@ class RateCheck:
         Uses the same `rate_diff_ci` machinery (and `method`/`n_resamples`/
         `random_state` semantics) as `.equivalent()`.
         """
+        inference = InferenceConfig(
+            alpha=alpha,
+            n_resamples=n_resamples,
+            random_state=random_state,
+            method=method,
+        )
         return _change_result(
             diff_func=rate_diff_ci,
             statistic=Statistic.RATE,
@@ -360,10 +371,7 @@ class RateCheck:
             after_values=self._after_values,
             threshold=threshold,
             direction="greater_than",
-            alpha=alpha,
-            n_resamples=n_resamples,
-            random_state=random_state,
-            method=method,
+            inference=inference,
         )
 
     def change_less_than(
@@ -387,6 +395,12 @@ class RateCheck:
         Uses the same `rate_diff_ci` machinery (and `method`/`n_resamples`/
         `random_state` semantics) as `.equivalent()`.
         """
+        inference = InferenceConfig(
+            alpha=alpha,
+            n_resamples=n_resamples,
+            random_state=random_state,
+            method=method,
+        )
         return _change_result(
             diff_func=rate_diff_ci,
             statistic=Statistic.RATE,
@@ -396,10 +410,7 @@ class RateCheck:
             after_values=self._after_values,
             threshold=threshold,
             direction="less_than",
-            alpha=alpha,
-            n_resamples=n_resamples,
-            random_state=random_state,
-            method=method,
+            inference=inference,
         )
 
 

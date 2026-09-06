@@ -8,7 +8,6 @@ from frameworthy._errors import (
     InvalidParameterError,
 )
 from frameworthy._stats import (
-    _validate_alpha,
     analytical_mean_diff_ci,
     analytical_rate_diff_ci,
     bootstrap_mean_diff_ci,
@@ -20,20 +19,21 @@ from frameworthy._stats import (
     rate_diff_ci,
     wilson_interval,
 )
+from frameworthy._validation import validate_alpha
 
 
 class TestValidateAlpha:
-    """`_validate_alpha` is the single guard shared by every function below
+    """`validate_alpha` is the single guard shared by every function below
     that takes an `alpha`; each of those call sites is covered once here
     rather than re-testing the same one-line check at every call site.
     """
 
     def test_accepts_values_in_open_range(self):
-        _validate_alpha(0.05)  # should not raise
+        validate_alpha(0.05)  # should not raise
 
     def test_rejects_invalid_alpha(self):
         with pytest.raises(InvalidParameterError, match="alpha"):
-            _validate_alpha(0.6)
+            validate_alpha(0.6)
 
 
 class TestBootstrapMeanDiffCi:
