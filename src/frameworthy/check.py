@@ -1,4 +1,4 @@
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
 
 import numpy as np
 from narwhals.stable.v2.typing import IntoDataFrame
@@ -13,12 +13,14 @@ from ._constants import (
     DEFAULT_ALPHA,
     DEFAULT_INFERENCE_METHOD,
     DEFAULT_N_RESAMPLES,
+    DiffCIFunc,
+    Direction,
     InferenceMethod,
+    Statistic,
 )
 from ._errors import UsageError
 from ._pairing import _normalize_keys, assert_unique_keys
 from ._stats import (
-    Direction,
     classify_change_bound,
     classify_equivalence,
     mean_diff_ci,
@@ -26,13 +28,11 @@ from ._stats import (
 )
 from .results import ChangeResult, EquivalenceResult
 
-DiffFunc = Callable[..., tuple[float, float, float]]
-
 
 def _equivalence_result(
     *,
-    diff_func: DiffFunc,
-    statistic: str,
+    diff_func: DiffCIFunc,
+    statistic: Statistic,
     column: str,
     paired: bool,
     before_values: np.ndarray,
@@ -80,8 +80,8 @@ def _equivalence_result(
 
 def _change_result(
     *,
-    diff_func: DiffFunc,
-    statistic: str,
+    diff_func: DiffCIFunc,
+    statistic: Statistic,
     column: str,
     paired: bool,
     before_values: np.ndarray,
@@ -178,7 +178,7 @@ class MeanCheck:
         """
         return _equivalence_result(
             diff_func=mean_diff_ci,
-            statistic="mean",
+            statistic=Statistic.MEAN,
             column=self._column,
             paired=self._paired,
             before_values=self._before_values,
@@ -213,7 +213,7 @@ class MeanCheck:
         """
         return _change_result(
             diff_func=mean_diff_ci,
-            statistic="mean",
+            statistic=Statistic.MEAN,
             column=self._column,
             paired=self._paired,
             before_values=self._before_values,
@@ -249,7 +249,7 @@ class MeanCheck:
         """
         return _change_result(
             diff_func=mean_diff_ci,
-            statistic="mean",
+            statistic=Statistic.MEAN,
             column=self._column,
             paired=self._paired,
             before_values=self._before_values,
@@ -317,7 +317,7 @@ class RateCheck:
         """
         return _equivalence_result(
             diff_func=rate_diff_ci,
-            statistic="rate",
+            statistic=Statistic.RATE,
             column=self._column,
             paired=self._paired,
             before_values=self._before_values,
@@ -353,7 +353,7 @@ class RateCheck:
         """
         return _change_result(
             diff_func=rate_diff_ci,
-            statistic="rate",
+            statistic=Statistic.RATE,
             column=self._column,
             paired=self._paired,
             before_values=self._before_values,
@@ -389,7 +389,7 @@ class RateCheck:
         """
         return _change_result(
             diff_func=rate_diff_ci,
-            statistic="rate",
+            statistic=Statistic.RATE,
             column=self._column,
             paired=self._paired,
             before_values=self._before_values,

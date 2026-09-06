@@ -1,8 +1,8 @@
 import warnings
 from dataclasses import dataclass
 
+from ._constants import Direction, Statistic
 from ._errors import FrameworthyAssertionError
-from ._stats import Direction
 from .decision import Decision
 
 
@@ -16,7 +16,7 @@ class EquivalenceResult:
 
     decision: Decision
     column: str
-    statistic: str
+    statistic: Statistic
     paired: bool
     before_mean: float
     after_mean: float
@@ -81,7 +81,7 @@ class ChangeResult:
 
     decision: Decision
     column: str
-    statistic: str
+    statistic: Statistic
     paired: bool
     before_mean: float
     after_mean: float

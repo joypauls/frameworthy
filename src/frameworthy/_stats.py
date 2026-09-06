@@ -1,17 +1,13 @@
-from typing import Literal
-
 import numpy as np
 from scipy import stats
 
-from ._constants import DEFAULT_INFERENCE_METHOD, InferenceMethod
+from ._constants import DEFAULT_INFERENCE_METHOD, Direction, InferenceMethod, Interval
 from ._errors import (
     InsufficientDataError,
     InvalidColumnDataError,
     InvalidParameterError,
 )
 from .decision import Decision
-
-Direction = Literal["greater_than", "less_than"]
 
 
 def _validate_alpha(alpha: float) -> None:
@@ -102,7 +98,7 @@ def bootstrap_mean_diff_ci(
     alpha: float,
     n_resamples: int,
     rng: np.random.Generator,
-) -> tuple[float, float, float]:
+) -> Interval:
     """
     Bootstrap the mean difference `after - before` and its confidence interval.
 
@@ -126,23 +122,21 @@ def bootstrap_mean_diff_ci(
         )
 
     ci_low, ci_high = np.percentile(boot_diffs, [100 * alpha, 100 * (1 - alpha)])
-    return observed, float(ci_low), float(ci_high)
+    return Interval(observed, float(ci_low), float(ci_high))
 
 
-def _t_interval(
-    observed: float, se: float, deg_f: float, alpha: float
-) -> tuple[float, float, float]:
+def _t_interval(observed: float, se: float, deg_f: float, alpha: float) -> Interval:
     """Build a `(1 - 2 * alpha)` t-interval around `observed` given its SE and df."""
     if se == 0:
-        return observed, observed, observed
+        return Interval(observed, observed, observed)
 
     margin = float(stats.t.ppf(1 - alpha, deg_f)) * se
-    return observed, observed - margin, observed + margin
+    return Interval(observed, observed - margin, observed + margin)
 
 
 def paired_mean_diff_ci(
     before: np.ndarray, after: np.ndarray, *, alpha: float
-) -> tuple[float, float, float]:
+) -> Interval:
     """Paired t-interval for the mean of the within-pair differences
     `after - before`.
 
@@ -169,7 +163,7 @@ def paired_mean_diff_ci(
 
 def independent_mean_diff_ci(
     before: np.ndarray, after: np.ndarray, *, alpha: float
-) -> tuple[float, float, float]:
+) -> Interval:
     """Welch's (unequal-variance) t-interval for two independent samples.
 
     Returns `(observed_diff, ci_low, ci_high)` where `observed_diff` is
@@ -188,7 +182,7 @@ def independent_mean_diff_ci(
     se = float(np.sqrt(se_sq_before + se_sq_after))
     observed = float(after.mean() - before.mean())
     if se == 0:
-        return observed, observed, observed
+        return Interval(observed, observed, observed)
 
     # welch-satterthwaite degrees of freedom
     deg_f = (se_sq_before + se_sq_after) ** 2 / (
@@ -203,7 +197,7 @@ def analytical_mean_diff_ci(
     *,
     paired: bool,
     alpha: float,
-) -> tuple[float, float, float]:
+) -> Interval:
     """
     Analytically compute the mean difference `after - before` and its CI.
 
@@ -232,7 +226,7 @@ def mean_diff_ci(
     n_resamples: int,
     rng: np.random.Generator,
     method: InferenceMethod = DEFAULT_INFERENCE_METHOD,
-) -> tuple[float, float, float]:
+) -> Interval:
     """
     Select an inference strategy and compute the mean difference CI.
 
@@ -257,7 +251,7 @@ def mean_diff_ci(
 
 def independent_rate_diff_ci(
     before: np.ndarray, after: np.ndarray, *, alpha: float
-) -> tuple[float, float, float]:
+) -> Interval:
     """
     Newcombe's hybrid score ("MOVER") CI for the difference of two
     independent binomial proportions.
@@ -290,7 +284,7 @@ def independent_rate_diff_ci(
 
     low = diff - np.sqrt((p_after - l_after) ** 2 + (u_before - p_before) ** 2)
     high = diff + np.sqrt((u_after - p_after) ** 2 + (p_before - l_before) ** 2)
-    return diff, float(low), float(high)
+    return Interval(diff, float(low), float(high))
 
 
 def _paired_phi(before: np.ndarray, after: np.ndarray) -> float:
@@ -324,7 +318,7 @@ def _paired_phi(before: np.ndarray, after: np.ndarray) -> float:
 
 def paired_rate_diff_ci(
     before: np.ndarray, after: np.ndarray, *, alpha: float
-) -> tuple[float, float, float]:
+) -> Interval:
     """Newcombe's (1998) score-based CI for the difference between two
     paired/correlated binomial proportions.
 
@@ -378,7 +372,7 @@ def paired_rate_diff_ci(
     )
     low = diff - np.sqrt(max(low_radicand, 0.0))
     high = diff + np.sqrt(max(high_radicand, 0.0))
-    return diff, float(low), float(high)
+    return Interval(diff, float(low), float(high))
 
 
 def analytical_rate_diff_ci(
@@ -387,7 +381,7 @@ def analytical_rate_diff_ci(
     *,
     paired: bool,
     alpha: float,
-) -> tuple[float, float, float]:
+) -> Interval:
     """Analytically compute the rate (proportion) difference `after - before`
     and its CI, dispatching to the paired or independent Newcombe/Wilson
     formula.
@@ -415,7 +409,7 @@ def rate_diff_ci(
     n_resamples: int,
     rng: np.random.Generator,
     method: InferenceMethod = DEFAULT_INFERENCE_METHOD,
-) -> tuple[float, float, float]:
+) -> Interval:
     """Select an inference strategy and compute the rate difference CI.
 
     Mirrors `mean_diff_ci`'s dispatch: `"analytical"` uses the
