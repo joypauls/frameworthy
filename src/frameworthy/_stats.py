@@ -348,6 +348,64 @@ def paired_rate_diff_ci(
     return diff, float(low), float(high)
 
 
+def analytical_rate_diff_ci(
+    before: np.ndarray,
+    after: np.ndarray,
+    *,
+    paired: bool,
+    alpha: float,
+) -> tuple[float, float, float]:
+    """Analytically compute the rate (proportion) difference `after - before`
+    and its CI, dispatching to the paired or independent Newcombe/Wilson
+    formula.
+
+    If `paired`, `before` and `after` must be the same length and
+    correspond element-wise. Otherwise, `before` and `after` are treated as
+    independent samples.
+
+    Returns `(observed_diff, ci_low, ci_high)` where the interval is the
+    `(1 - 2 * alpha)` confidence interval.
+    """
+    _validate_alpha(alpha)
+
+    if paired:
+        return paired_rate_diff_ci(before, after, alpha=alpha)
+    return independent_rate_diff_ci(before, after, alpha=alpha)
+
+
+def rate_diff_ci(
+    before: np.ndarray,
+    after: np.ndarray,
+    *,
+    paired: bool,
+    alpha: float,
+    n_resamples: int,
+    rng: np.random.Generator,
+    method: InferenceMethod = DEFAULT_INFERENCE_METHOD,
+) -> tuple[float, float, float]:
+    """Select an inference strategy and compute the rate difference CI.
+
+    Mirrors `mean_diff_ci`'s dispatch: `"analytical"` uses the
+    Newcombe/Wilson score-based CIs above (the default for built-in
+    `.rate()` checks), while `"bootstrap"` falls back to the generic
+    percentile bootstrap of the raw (0/1) values, which is valid for any
+    bounded array but doesn't get the boundary-case benefits of the Wilson
+    interval.
+    """
+    if method == "analytical":
+        return analytical_rate_diff_ci(before, after, paired=paired, alpha=alpha)
+    if method == "bootstrap":
+        return bootstrap_mean_diff_ci(
+            before,
+            after,
+            paired=paired,
+            alpha=alpha,
+            n_resamples=n_resamples,
+            rng=rng,
+        )
+    raise ValueError(f"Unknown inference `method`: {method!r}.")
+
+
 def classify_equivalence(ci_low: float, ci_high: float, within: float) -> Decision:
     """
     Classify a mean-difference CI against an equivalence margin.

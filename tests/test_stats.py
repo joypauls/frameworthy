@@ -4,11 +4,13 @@ from scipy import stats as scipy_stats
 
 from frameworthy._stats import (
     analytical_mean_diff_ci,
+    analytical_rate_diff_ci,
     bootstrap_mean_diff_ci,
     classify_equivalence,
     independent_rate_diff_ci,
     mean_diff_ci,
     paired_rate_diff_ci,
+    rate_diff_ci,
     wilson_interval,
 )
 
@@ -566,3 +568,83 @@ class TestPairedRateDiffCi:
     def test_rejects_invalid_alpha(self):
         with pytest.raises(ValueError, match="alpha"):
             paired_rate_diff_ci(np.array([0.0, 1.0]), np.array([1.0, 0.0]), alpha=0.6)
+
+
+class TestAnalyticalRateDiffCi:
+    def test_paired_dispatches_to_paired_rate_diff_ci(self):
+        before = np.array([1.0, 0.0, 1.0, 0.0, 1.0, 1.0])
+        after = np.array([1.0, 1.0, 1.0, 0.0, 0.0, 1.0])
+
+        result = analytical_rate_diff_ci(before, after, paired=True, alpha=0.05)
+
+        assert result == paired_rate_diff_ci(before, after, alpha=0.05)
+
+    def test_independent_dispatches_to_independent_rate_diff_ci(self):
+        before = np.array([1.0, 0.0, 1.0, 0.0, 1.0, 1.0])
+        after = np.array([1.0, 1.0, 1.0, 0.0, 0.0, 1.0, 0.0])
+
+        result = analytical_rate_diff_ci(before, after, paired=False, alpha=0.05)
+
+        assert result == independent_rate_diff_ci(before, after, alpha=0.05)
+
+    def test_rejects_invalid_alpha(self):
+        with pytest.raises(ValueError, match="alpha"):
+            analytical_rate_diff_ci(
+                np.array([0.0, 1.0]), np.array([1.0, 0.0]), paired=True, alpha=0.6
+            )
+
+
+class TestRateDiffCiDispatcher:
+    def test_default_method_is_analytical(self):
+        before = np.array([1.0, 0.0, 1.0, 0.0, 1.0, 1.0])
+        after = np.array([1.0, 1.0, 1.0, 0.0, 0.0, 1.0])
+
+        result = rate_diff_ci(
+            before,
+            after,
+            paired=True,
+            alpha=0.05,
+            n_resamples=100,
+            rng=np.random.default_rng(0),
+        )
+
+        assert result == analytical_rate_diff_ci(before, after, paired=True, alpha=0.05)
+
+    def test_method_bootstrap_matches_direct_call(self):
+        before = np.array([1.0, 0.0, 1.0, 0.0, 1.0, 1.0])
+        after = np.array([1.0, 1.0, 1.0, 0.0, 0.0, 1.0])
+
+        result = rate_diff_ci(
+            before,
+            after,
+            paired=True,
+            alpha=0.05,
+            n_resamples=500,
+            rng=np.random.default_rng(42),
+            method="bootstrap",
+        )
+        expected = bootstrap_mean_diff_ci(
+            before,
+            after,
+            paired=True,
+            alpha=0.05,
+            n_resamples=500,
+            rng=np.random.default_rng(42),
+        )
+
+        assert result == expected
+
+    def test_rejects_unknown_method(self):
+        before = np.array([1.0, 0.0, 1.0])
+        after = np.array([1.0, 1.0, 0.0])
+
+        with pytest.raises(ValueError, match="Unknown inference"):
+            rate_diff_ci(
+                before,
+                after,
+                paired=True,
+                alpha=0.05,
+                n_resamples=100,
+                rng=np.random.default_rng(0),
+                method="magic",
+            )
