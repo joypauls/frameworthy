@@ -38,7 +38,7 @@ class Statistic(str, Enum):
 class Interval(NamedTuple):
     """A point estimate and its confidence interval: `(diff, low, high)`.
 
-    Returned by every `*_diff_ci` function in `_stats.py`. Being a
+    Returned by every `*_diff_ci` function in `_intervals.py`. Being a
     `NamedTuple`, it still unpacks positionally like the plain 3-tuple it
     replaces (`diff, low, high = interval`), so existing call sites and
     tuple-equality comparisons keep working unchanged.

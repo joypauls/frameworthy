@@ -3,7 +3,7 @@ for confidence-interval computation (min observations, equal-length pairs).
 
 Consolidating these here means every call site raises the same typed
 exception with the same wording for the same underlying problem, instead of
-each function in `_stats.py` re-implementing (and subtly re-wording) its
+each function in `_intervals.py` re-implementing (and subtly re-wording) its
 own guard.
 """
 

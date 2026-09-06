@@ -1,7 +1,17 @@
+"""Confidence-interval estimators for a difference `after - before`.
+
+Split out from `_stats.py`: this module owns interval *computation*
+(Wilson/bootstrap/analytical mean and rate estimators, plus the
+`mean_diff_ci`/`rate_diff_ci` dispatchers); `_decisions.py` owns turning a
+computed interval into a `Decision`.
+"""
+
+from collections.abc import Callable
+
 import numpy as np
 from scipy import stats
 
-from ._constants import DEFAULT_INFERENCE_METHOD, Direction, InferenceMethod, Interval
+from ._constants import DEFAULT_INFERENCE_METHOD, InferenceMethod, Interval
 from ._errors import InvalidParameterError
 from ._validation import (
     validate_alpha,
@@ -10,7 +20,6 @@ from ._validation import (
     validate_min_observations,
     validate_n_resamples,
 )
-from .decision import Decision
 
 
 def wilson_interval(count: int, n: int, alpha: float) -> tuple[float, float]:
@@ -74,7 +83,7 @@ def _bootstrap_unpaired_diffs(
     return observed, boot_diffs
 
 
-def bootstrap_mean_diff_ci(
+def bootstrap_diff_ci(
     before: np.ndarray,
     after: np.ndarray,
     *,
@@ -84,7 +93,12 @@ def bootstrap_mean_diff_ci(
     rng: np.random.Generator,
 ) -> Interval:
     """
-    Bootstrap the mean difference `after - before` and its confidence interval.
+    Bootstrap the difference `after - before` and its confidence interval.
+
+    Valid for any bounded array, including the 0/1 values `.rate()` checks
+    resample directly (hence the generic name, rather than `*_mean_*`: this
+    is the shared bootstrap fallback for both `mean_diff_ci` and
+    `rate_diff_ci`).
 
     If `paired`, `before` and `after` must be the same length and correspond
     element-wise; the diffs are resampled together. Otherwise, `before` and
@@ -196,37 +210,6 @@ def analytical_mean_diff_ci(
     if paired:
         return paired_mean_diff_ci(before, after, alpha=alpha)
     return independent_mean_diff_ci(before, after, alpha=alpha)
-
-
-def mean_diff_ci(
-    before: np.ndarray,
-    after: np.ndarray,
-    *,
-    paired: bool,
-    alpha: float,
-    n_resamples: int,
-    rng: np.random.Generator,
-    method: InferenceMethod = DEFAULT_INFERENCE_METHOD,
-) -> Interval:
-    """
-    Select an inference strategy and compute the mean difference CI.
-
-    This is the single dispatch point between the analytical fast path
-    (used by default for built-in `.mean()` checks) and the bootstrap
-    fallback (kept available for future, arbitrary metrics that don't have
-    a closed-form interval).
-    """
-    validate_method(method)
-    if method == "analytical":
-        return analytical_mean_diff_ci(before, after, paired=paired, alpha=alpha)
-    return bootstrap_mean_diff_ci(
-        before,
-        after,
-        paired=paired,
-        alpha=alpha,
-        n_resamples=n_resamples,
-        rng=rng,
-    )
 
 
 def independent_rate_diff_ci(
@@ -378,6 +361,75 @@ def analytical_rate_diff_ci(
     return independent_rate_diff_ci(before, after, alpha=alpha)
 
 
+AnalyticalDiffFunc = Callable[..., Interval]
+
+
+def diff_ci(
+    before: np.ndarray,
+    after: np.ndarray,
+    *,
+    paired: bool,
+    alpha: float,
+    n_resamples: int,
+    rng: np.random.Generator,
+    analytical_fn: AnalyticalDiffFunc,
+    method: InferenceMethod = DEFAULT_INFERENCE_METHOD,
+) -> Interval:
+    """
+    Select an inference strategy and compute a difference CI.
+
+    This is the single dispatch point shared by every built-in metric: the
+    analytical fast path (`analytical_fn`, e.g. `analytical_mean_diff_ci` or
+    `analytical_rate_diff_ci`) versus the generic bootstrap fallback
+    (`bootstrap_diff_ci`), which works for any metric but doesn't get the
+    boundary-case benefits of a metric-specific analytical estimator.
+
+    A new metric only needs its own `analytical_fn`; it can reuse this
+    dispatcher directly rather than re-implementing `mean_diff_ci`/
+    `rate_diff_ci`'s dispatch logic from scratch.
+    """
+    validate_method(method)
+    if method == "analytical":
+        return analytical_fn(before, after, paired=paired, alpha=alpha)
+    return bootstrap_diff_ci(
+        before,
+        after,
+        paired=paired,
+        alpha=alpha,
+        n_resamples=n_resamples,
+        rng=rng,
+    )
+
+
+def mean_diff_ci(
+    before: np.ndarray,
+    after: np.ndarray,
+    *,
+    paired: bool,
+    alpha: float,
+    n_resamples: int,
+    rng: np.random.Generator,
+    method: InferenceMethod = DEFAULT_INFERENCE_METHOD,
+) -> Interval:
+    """
+    Select an inference strategy and compute the mean difference CI.
+
+    Thin wrapper around `diff_ci` bound to `analytical_mean_diff_ci`: the
+    analytical path is a t-interval (paired) or Welch's t-interval
+    (independent), used by default for built-in `.mean()` checks.
+    """
+    return diff_ci(
+        before,
+        after,
+        paired=paired,
+        alpha=alpha,
+        n_resamples=n_resamples,
+        rng=rng,
+        analytical_fn=analytical_mean_diff_ci,
+        method=method,
+    )
+
+
 def rate_diff_ci(
     before: np.ndarray,
     after: np.ndarray,
@@ -388,75 +440,20 @@ def rate_diff_ci(
     rng: np.random.Generator,
     method: InferenceMethod = DEFAULT_INFERENCE_METHOD,
 ) -> Interval:
-    """Select an inference strategy and compute the rate difference CI.
-
-    Mirrors `mean_diff_ci`'s dispatch: `"analytical"` uses the
-    Newcombe/Wilson score-based CIs above (the default for built-in
-    `.rate()` checks), while `"bootstrap"` falls back to the generic
-    percentile bootstrap of the raw (0/1) values, which is valid for any
-    bounded array but doesn't get the boundary-case benefits of the Wilson
-    interval.
     """
-    validate_method(method)
-    if method == "analytical":
-        return analytical_rate_diff_ci(before, after, paired=paired, alpha=alpha)
-    return bootstrap_mean_diff_ci(
+    Select an inference strategy and compute the rate difference CI.
+
+    Thin wrapper around `diff_ci` bound to `analytical_rate_diff_ci`: the
+    analytical path uses the Newcombe/Wilson score-based CIs above, the
+    default for built-in `.rate()` checks.
+    """
+    return diff_ci(
         before,
         after,
         paired=paired,
         alpha=alpha,
         n_resamples=n_resamples,
         rng=rng,
+        analytical_fn=analytical_rate_diff_ci,
+        method=method,
     )
-
-
-def classify_equivalence(ci_low: float, ci_high: float, within: float) -> Decision:
-    """
-    Classify a mean-difference CI against an equivalence margin.
-
-    * `equivalent`: the whole CI lies inside `(-within, within)`.
-    * `changed`: the whole CI lies outside `(-within, within)`, i.e. it
-      doesn't even touch the margin.
-    * `inconclusive`: the CI straddles a margin boundary.
-    """
-    if within <= 0:
-        raise InvalidParameterError(f"`within` must be positive, got {within}.")
-
-    if -within <= ci_low and ci_high <= within:
-        return Decision.EQUIVALENT
-    if ci_high < -within or ci_low > within:
-        return Decision.CHANGED
-    return Decision.INCONCLUSIVE
-
-
-def classify_change_bound(
-    ci_low: float, ci_high: float, threshold: float, *, direction: Direction
-) -> Decision:
-    """
-    Classify a difference CI against a one-sided change threshold.
-
-    `ci_low` and `ci_high` come from the same `(1 - 2 * alpha)` two-sided CI
-    used by equivalence checks; each endpoint on its own is also a valid
-    `(1 - alpha)` one-sided confidence bound, which is what makes this a
-    statistically valid one-sided decision rule without any new interval math.
-
-    * `direction="greater_than"` (ruling out a drop below `threshold`):
-      `PASSED` if `ci_low > threshold`, `FAILED` if `ci_high < threshold`,
-      `INCONCLUSIVE` otherwise.
-    * `direction="less_than"` (ruling out a rise above `threshold`):
-      `PASSED` if `ci_high < threshold`, `FAILED` if `ci_low > threshold`,
-      `INCONCLUSIVE` otherwise.
-    """
-    if direction == "greater_than":
-        if ci_low > threshold:
-            return Decision.PASSED
-        if ci_high < threshold:
-            return Decision.FAILED
-        return Decision.INCONCLUSIVE
-    if direction == "less_than":
-        if ci_high < threshold:
-            return Decision.PASSED
-        if ci_low > threshold:
-            return Decision.FAILED
-        return Decision.INCONCLUSIVE
-    raise InvalidParameterError(f"Unknown `direction`: {direction!r}.")

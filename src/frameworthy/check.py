@@ -18,14 +18,10 @@ from ._constants import (
     InferenceMethod,
     Statistic,
 )
+from ._decisions import classify_change_bound, classify_equivalence
 from ._errors import UsageError
+from ._intervals import mean_diff_ci, rate_diff_ci
 from ._pairing import _normalize_keys, assert_unique_keys
-from ._stats import (
-    classify_change_bound,
-    classify_equivalence,
-    mean_diff_ci,
-    rate_diff_ci,
-)
 from ._validation import InferenceConfig
 from .results import ChangeResult, EquivalenceResult
 
@@ -159,7 +155,7 @@ class MeanCheck:
         Builds a `(1 - 2 * alpha)` confidence interval for the mean
         difference (after - before), then classifies it against the
         `within` margin as `equivalent`, `changed`, or `inconclusive`. See
-        `frameworthy._stats` for the decision rule.
+        `frameworthy._decisions` for the decision rule.
 
         The mean has a closed-form interval, so `method` defaults to
         `"analytical"` (a t-interval for paired differences, or a Welch/
@@ -301,7 +297,7 @@ class RateCheck:
         in rates (after - before), then classifies it against the `within`
         margin as `equivalent`, `changed`, or `inconclusive`. `within` is a
         plain proportion, e.g. `within=0.005` means half a percentage
-        point. See `frameworthy._stats` for the decision rule.
+        point. See `frameworthy._decisions` for the decision rule.
 
         Unlike `MeanCheck`, the default `method="analytical"` path doesn't
         fit a t-interval to the raw 0/1 values; it combines Wilson score

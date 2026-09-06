@@ -7,42 +7,25 @@ from frameworthy._errors import (
     InvalidColumnDataError,
     InvalidParameterError,
 )
-from frameworthy._stats import (
+from frameworthy._intervals import (
     analytical_mean_diff_ci,
     analytical_rate_diff_ci,
-    bootstrap_mean_diff_ci,
-    classify_change_bound,
-    classify_equivalence,
+    bootstrap_diff_ci,
     independent_rate_diff_ci,
     mean_diff_ci,
     paired_rate_diff_ci,
     rate_diff_ci,
     wilson_interval,
 )
-from frameworthy._validation import validate_alpha
 
 
-class TestValidateAlpha:
-    """`validate_alpha` is the single guard shared by every function below
-    that takes an `alpha`; each of those call sites is covered once here
-    rather than re-testing the same one-line check at every call site.
-    """
-
-    def test_accepts_values_in_open_range(self):
-        validate_alpha(0.05)  # should not raise
-
-    def test_rejects_invalid_alpha(self):
-        with pytest.raises(InvalidParameterError, match="alpha"):
-            validate_alpha(0.6)
-
-
-class TestBootstrapMeanDiffCi:
+class TestBootstrapDiffCi:
     def test_paired_recovers_known_constant_shift(self):
         rng = np.random.default_rng(0)
         before = np.array([10.0, 20.0, 30.0, 40.0, 50.0])
         after = before + 1.0  # constant shift, zero variance in diffs
 
-        observed, ci_low, ci_high = bootstrap_mean_diff_ci(
+        observed, ci_low, ci_high = bootstrap_diff_ci(
             before,
             after,
             paired=True,
@@ -58,7 +41,7 @@ class TestBootstrapMeanDiffCi:
     def test_paired_requires_equal_length(self):
         rng = np.random.default_rng(0)
         with pytest.raises(InvalidColumnDataError, match="same length"):
-            bootstrap_mean_diff_ci(
+            bootstrap_diff_ci(
                 np.array([1.0, 2.0]),
                 np.array([1.0, 2.0, 3.0]),
                 paired=True,
@@ -70,7 +53,7 @@ class TestBootstrapMeanDiffCi:
     def test_paired_requires_at_least_two_observations(self):
         rng = np.random.default_rng(0)
         with pytest.raises(InsufficientDataError, match="At least 2"):
-            bootstrap_mean_diff_ci(
+            bootstrap_diff_ci(
                 np.array([1.0]),
                 np.array([2.0]),
                 paired=True,
@@ -84,7 +67,7 @@ class TestBootstrapMeanDiffCi:
         before = rng.normal(loc=10.0, scale=0.01, size=500)
         after = rng.normal(loc=11.0, scale=0.01, size=600)
 
-        observed, ci_low, ci_high = bootstrap_mean_diff_ci(
+        observed, ci_low, ci_high = bootstrap_diff_ci(
             before,
             after,
             paired=False,
@@ -101,7 +84,7 @@ class TestBootstrapMeanDiffCi:
         before = np.array([1.0, 2.0, 3.0])
         after = np.array([4.0, 5.0])
 
-        observed, ci_low, ci_high = bootstrap_mean_diff_ci(
+        observed, ci_low, ci_high = bootstrap_diff_ci(
             before,
             after,
             paired=False,
@@ -116,7 +99,7 @@ class TestBootstrapMeanDiffCi:
     def test_unpaired_requires_at_least_two_observations_per_side(self):
         rng = np.random.default_rng(0)
         with pytest.raises(InsufficientDataError, match="At least 2"):
-            bootstrap_mean_diff_ci(
+            bootstrap_diff_ci(
                 np.array([1.0]),
                 np.array([2.0, 3.0]),
                 paired=False,
@@ -129,7 +112,7 @@ class TestBootstrapMeanDiffCi:
         before = np.array([1.0, 2.0, 3.0, 4.0])
         after = np.array([2.0, 2.0, 5.0, 3.0])
 
-        result_a = bootstrap_mean_diff_ci(
+        result_a = bootstrap_diff_ci(
             before,
             after,
             paired=True,
@@ -137,7 +120,7 @@ class TestBootstrapMeanDiffCi:
             n_resamples=500,
             rng=np.random.default_rng(42),
         )
-        result_b = bootstrap_mean_diff_ci(
+        result_b = bootstrap_diff_ci(
             before,
             after,
             paired=True,
@@ -267,7 +250,7 @@ class TestAnalyticalMeanDiffCi:
         after = before + rng.normal(1.0, 2.0, size=200)
 
         analytical = analytical_mean_diff_ci(before, after, paired=True, alpha=0.05)
-        bootstrap = bootstrap_mean_diff_ci(
+        bootstrap = bootstrap_diff_ci(
             before,
             after,
             paired=True,
@@ -286,7 +269,7 @@ class TestAnalyticalMeanDiffCi:
         after = rng.normal(101.0, 6.0, size=350)
 
         analytical = analytical_mean_diff_ci(before, after, paired=False, alpha=0.05)
-        bootstrap = bootstrap_mean_diff_ci(
+        bootstrap = bootstrap_diff_ci(
             before,
             after,
             paired=False,
@@ -345,7 +328,7 @@ class TestMeanDiffCiDispatcher:
             rng=np.random.default_rng(42),
             method="bootstrap",
         )
-        expected = bootstrap_mean_diff_ci(
+        expected = bootstrap_diff_ci(
             before,
             after,
             paired=True,
@@ -370,60 +353,6 @@ class TestMeanDiffCiDispatcher:
                 rng=np.random.default_rng(0),
                 method="magic",
             )
-
-
-class TestClassifyEquivalence:
-    def test_equivalent_when_ci_fully_inside_margin(self):
-        assert classify_equivalence(-1.0, 1.0, within=2.0) == "equivalent"
-
-    def test_changed_when_ci_fully_outside_margin_above(self):
-        assert classify_equivalence(3.0, 5.0, within=2.0) == "changed"
-
-    def test_changed_when_ci_fully_outside_margin_below(self):
-        assert classify_equivalence(-5.0, -3.0, within=2.0) == "changed"
-
-    def test_inconclusive_when_ci_straddles_upper_margin(self):
-        assert classify_equivalence(1.0, 3.0, within=2.0) == "inconclusive"
-
-    def test_inconclusive_when_ci_straddles_lower_margin(self):
-        assert classify_equivalence(-3.0, -1.0, within=2.0) == "inconclusive"
-
-    def test_inconclusive_when_ci_spans_both_margins(self):
-        assert classify_equivalence(-5.0, 5.0, within=2.0) == "inconclusive"
-
-    def test_rejects_non_positive_within(self):
-        with pytest.raises(InvalidParameterError, match="within"):
-            classify_equivalence(-1.0, 1.0, within=0.0)
-
-
-class TestClassifyChangeBound:
-    def test_greater_than_passed_when_lower_bound_above_threshold(self):
-        result = classify_change_bound(-0.001, 0.01, -0.005, direction="greater_than")
-        assert result == "passed"
-
-    def test_greater_than_failed_when_upper_bound_below_threshold(self):
-        result = classify_change_bound(-0.02, -0.01, -0.005, direction="greater_than")
-        assert result == "failed"
-
-    def test_greater_than_inconclusive_when_threshold_inside_ci(self):
-        result = classify_change_bound(-0.02, 0.01, -0.005, direction="greater_than")
-        assert result == "inconclusive"
-
-    def test_less_than_passed_when_upper_bound_below_threshold(self):
-        result = classify_change_bound(-5.0, 15.0, 20.0, direction="less_than")
-        assert result == "passed"
-
-    def test_less_than_failed_when_lower_bound_above_threshold(self):
-        result = classify_change_bound(25.0, 35.0, 20.0, direction="less_than")
-        assert result == "failed"
-
-    def test_less_than_inconclusive_when_threshold_inside_ci(self):
-        result = classify_change_bound(15.0, 25.0, 20.0, direction="less_than")
-        assert result == "inconclusive"
-
-    def test_rejects_unknown_direction(self):
-        with pytest.raises(InvalidParameterError, match="direction"):
-            classify_change_bound(-1.0, 1.0, 0.0, direction="sideways")
 
 
 class TestWilsonInterval:
@@ -608,7 +537,7 @@ class TestRateDiffCiDispatcher:
             rng=np.random.default_rng(42),
             method="bootstrap",
         )
-        expected = bootstrap_mean_diff_ci(
+        expected = bootstrap_diff_ci(
             before,
             after,
             paired=True,
