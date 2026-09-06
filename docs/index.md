@@ -4,7 +4,7 @@ layout: home
 hero:
   name: frameworthy
 #   text: Uncertainty-aware regression testing for data and metrics.
-  tagline: Uncertainty-aware regression testing for data and metrics.
+  tagline: Lightweight statistical validation for data and metric changes.
   image:
     src: /logo.png
     alt: Frameworthy

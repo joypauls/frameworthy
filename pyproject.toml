@@ -1,7 +1,7 @@
 [project]
 name = "frameworthy"
 version = "0.1.2"
-description = "Statistical regression testing for dataframes and metrics in a lightweight package."
+description = "Lightweight statistical validation for data and metric changes."
 readme = "README.md"
 authors = [
     { name = "joypauls", email = "joypaulsen3@gmail.com" }
