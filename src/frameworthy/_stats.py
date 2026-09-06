@@ -115,13 +115,13 @@ def bootstrap_mean_diff_ci(
 
 
 def _t_interval(
-    observed: float, se: float, df: float, alpha: float
+    observed: float, se: float, deg_f: float, alpha: float
 ) -> tuple[float, float, float]:
     """Build a `(1 - 2 * alpha)` t-interval around `observed` given its SE and df."""
     if se == 0:
         return observed, observed, observed
 
-    margin = float(stats.t.ppf(1 - alpha, df)) * se
+    margin = float(stats.t.ppf(1 - alpha, deg_f)) * se
     return observed, observed - margin, observed + margin
 
 
@@ -142,7 +142,7 @@ def _paired_mean_diff_ci(
     diffs = after - before
     n = len(diffs)
     se = float(diffs.std(ddof=1)) / np.sqrt(n)
-    return _t_interval(float(diffs.mean()), se, df=n - 1, alpha=alpha)
+    return _t_interval(float(diffs.mean()), se, deg_f=n - 1, alpha=alpha)
 
 
 def _independent_mean_diff_ci(
@@ -163,11 +163,11 @@ def _independent_mean_diff_ci(
     if se == 0:
         return observed, observed, observed
 
-    # Welch-Satterthwaite degrees of freedom
-    df = (se_sq_before + se_sq_after) ** 2 / (
+    # welch-satterthwaite degrees of freedom
+    deg_f = (se_sq_before + se_sq_after) ** 2 / (
         se_sq_before**2 / (n_before - 1) + se_sq_after**2 / (n_after - 1)
     )
-    return _t_interval(observed, se, df=df, alpha=alpha)
+    return _t_interval(observed, se, deg_f=deg_f, alpha=alpha)
 
 
 def analytical_mean_diff_ci(
@@ -266,8 +266,91 @@ def independent_rate_diff_ci(
     return diff, float(low), float(high)
 
 
+def _paired_phi(before: np.ndarray, after: np.ndarray) -> float:
+    """Newcombe's (1998) adjusted correlation coefficient for a 2x2 paired
+    (before, after) table, used to account for the within-pair correlation
+    when combining the before/after Wilson intervals.
+
+    Returns `0.0` if any of the table's margins are zero (no information to
+    estimate a correlation from).
+    """
+    n = len(before)
+    r = float(np.sum((before == 1) & (after == 1)))
+    s = float(np.sum((before == 0) & (after == 1)))
+    t = float(np.sum((before == 1) & (after == 0)))
+    u = float(np.sum((before == 0) & (after == 0)))
+
+    margins_product = (r + s) * (t + u) * (r + t) * (s + u)
+    if margins_product <= 0:
+        return 0.0
+
+    b = r * u - s * t
+    if b > n / 2:
+        c = b - n / 2
+    elif b < 0:
+        c = b
+    else:
+        c = 0.0
+
+    return c / np.sqrt(margins_product)
+
+
+def paired_rate_diff_ci(
+    before: np.ndarray, after: np.ndarray, *, alpha: float
+) -> tuple[float, float, float]:
+    """Newcombe's (1998) score-based CI for the difference between two
+    paired/correlated binomial proportions.
+
+    `before` and `after` must be 0/1 arrays of equal length, corresponding
+    element-wise. Like `independent_rate_diff_ci`, this combines Wilson
+    score intervals for the before/after proportions rather than the
+    sample variance of the paired 0/1 differences, and additionally
+    corrects for the within-pair correlation via `_paired_phi`. See
+    Newcombe, R.G. (1998), "Improved confidence intervals for the
+    difference between binomial proportions based on paired data,"
+    Statistics in Medicine 17(22).
+
+    Returns `(observed_diff, ci_low, ci_high)` where `observed_diff` is
+    `after.mean() - before.mean()` and the interval is the `(1 - 2 * alpha)`
+    confidence interval.
+    """
+    _validate_alpha(alpha)
+    if len(before) != len(after):
+        raise ValueError(
+            "Paired comparison requires `before` and `after` to have the "
+            f"same length, got {len(before)} and {len(after)}."
+        )
+    if len(before) < 2:
+        raise ValueError(
+            "At least 2 paired observations are required for an analytical "
+            "confidence interval."
+        )
+
+    n = len(before)
+    p_before = float(before.mean())
+    p_after = float(after.mean())
+    diff = p_after - p_before
+
+    l_before, u_before = wilson_interval(int(before.sum()), n, alpha)
+    l_after, u_after = wilson_interval(int(after.sum()), n, alpha)
+    phi = _paired_phi(before, after)
+
+    low = diff - np.sqrt(
+        (p_after - l_after) ** 2
+        - 2 * phi * (p_after - l_after) * (u_before - p_before)
+        + (u_before - p_before) ** 2
+    )
+    high = diff + np.sqrt(
+        (p_before - l_before) ** 2
+        - 2 * phi * (p_before - l_before) * (u_after - p_after)
+        + (u_after - p_after) ** 2
+    )
+    return diff, float(low), float(high)
+
+
 def classify_equivalence(ci_low: float, ci_high: float, within: float) -> Decision:
-    """Classify a mean-difference CI against an equivalence margin.
+    """
+    Classify a mean-difference CI against an equivalence margin.
 
     * `equivalent`: the whole CI lies inside `(-within, within)`.
     * `changed`: the whole CI lies outside `(-within, within)`, i.e. it

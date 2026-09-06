@@ -8,6 +8,7 @@ from frameworthy._stats import (
     classify_equivalence,
     independent_rate_diff_ci,
     mean_diff_ci,
+    paired_rate_diff_ci,
     wilson_interval,
 )
 
@@ -500,3 +501,68 @@ class TestIndependentRateDiffCi:
             independent_rate_diff_ci(
                 np.array([0.0, 1.0]), np.array([0.0, 1.0]), alpha=0.6
             )
+
+
+class TestPairedRateDiffCi:
+    def test_matches_hand_computed_newcombe_paired_ci(self):
+        # 2x2 paired table: a=40 (both 1), b=20 (before=1,after=0),
+        # c=8 (before=0,after=1), d=32 (both 0); n=100.
+        # Hand-computed (and cross-checked against a from-scratch
+        # reimplementation of Newcombe's 1998 paired formula) reference:
+        # phi = 0.43718, diff = after - before = -0.12,
+        # ci = [-0.21873, -0.01664] for a 95% CI (alpha=0.025 here).
+        before = np.array([1.0] * 40 + [1.0] * 20 + [0.0] * 8 + [0.0] * 32)
+        after = np.array([1.0] * 40 + [0.0] * 20 + [1.0] * 8 + [0.0] * 32)
+
+        diff, ci_low, ci_high = paired_rate_diff_ci(before, after, alpha=0.025)
+
+        assert diff == pytest.approx(-0.12)
+        assert ci_low == pytest.approx(-0.21873, abs=1e-4)
+        assert ci_high == pytest.approx(-0.01664, abs=1e-4)
+
+    def test_recovers_known_difference_for_large_samples(self):
+        rng = np.random.default_rng(0)
+        before = (rng.random(2000) < 0.30).astype(float)
+        # correlated after: mostly agrees with before, shifted up slightly
+        flip = rng.random(2000) < 0.1
+        after = np.where(flip, 1 - before, before)
+
+        diff, ci_low, ci_high = paired_rate_diff_ci(before, after, alpha=0.05)
+
+        assert ci_low < diff < ci_high
+        assert abs(diff) < 0.1
+
+    def test_zero_diff_when_both_sides_identical(self):
+        before = np.array([0.0, 1.0, 0.0, 1.0, 1.0, 0.0])
+        after = before.copy()
+
+        diff, ci_low, ci_high = paired_rate_diff_ci(before, after, alpha=0.05)
+
+        assert diff == pytest.approx(0.0)
+        assert ci_low < 0.0 < ci_high
+
+    def test_does_not_collapse_when_both_sides_are_all_zero(self):
+        before = np.zeros(50)
+        after = np.zeros(50)
+
+        diff, ci_low, ci_high = paired_rate_diff_ci(before, after, alpha=0.05)
+
+        assert diff == pytest.approx(0.0)
+        # degenerate table (all margins zero) => phi=0, but Wilson intervals
+        # around 0/1 still aren't zero-width, so the CI isn't a single point
+        assert ci_low < 0.0
+        assert ci_high > 0.0
+
+    def test_requires_equal_length(self):
+        with pytest.raises(ValueError, match="same length"):
+            paired_rate_diff_ci(
+                np.array([1.0, 0.0, 1.0]), np.array([1.0, 0.0]), alpha=0.05
+            )
+
+    def test_requires_at_least_two_pairs(self):
+        with pytest.raises(ValueError, match="At least 2"):
+            paired_rate_diff_ci(np.array([1.0]), np.array([0.0]), alpha=0.05)
+
+    def test_rejects_invalid_alpha(self):
+        with pytest.raises(ValueError, match="alpha"):
+            paired_rate_diff_ci(np.array([0.0, 1.0]), np.array([1.0, 0.0]), alpha=0.6)
