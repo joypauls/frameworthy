@@ -481,6 +481,15 @@ class TestRateCheck:
         with pytest.raises(KeyError):
             fw.check(after, before=before).rate("missing_col")
 
+    def test_rejects_unknown_method(self, frame_factory):
+        before = frame_factory({"converted": [0.0, 1.0, 1.0]})
+        after = frame_factory({"converted": [1.0, 1.0, 0.0]})
+
+        with pytest.raises(ValueError, match="Unknown inference"):
+            fw.check(after, before=before).rate("converted").equivalent(
+                within=0.5, method="magic"
+            )
+
 
 class TestTwoDataframeNullHandling:
     def test_unpaired_drops_nulls_independently(self, frame_factory):

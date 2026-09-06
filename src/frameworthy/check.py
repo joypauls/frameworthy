@@ -1,4 +1,4 @@
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 
 import numpy as np
 from narwhals.stable.v2.typing import IntoDataFrame
@@ -18,6 +18,57 @@ from ._constants import (
 from ._pairing import _normalize_keys, assert_unique_keys
 from ._stats import classify_equivalence, mean_diff_ci, rate_diff_ci
 from .results import EquivalenceResult
+
+DiffCiFn = Callable[..., tuple[float, float, float]]
+
+
+def _equivalence_result(
+    *,
+    diff_ci_fn: DiffCiFn,
+    statistic: str,
+    column: str,
+    paired: bool,
+    before_values: np.ndarray,
+    after_values: np.ndarray,
+    within: float,
+    alpha: float,
+    n_resamples: int,
+    random_state: int | np.random.Generator | None,
+    method: InferenceMethod,
+) -> EquivalenceResult:
+    """Shared implementation behind `MeanCheck.equivalent()` and
+    `RateCheck.equivalent()`: run `diff_ci_fn` (either `mean_diff_ci` or
+    `rate_diff_ci`, which share a signature), classify the resulting CI,
+    and package everything into an `EquivalenceResult`.
+    """
+    rng = np.random.default_rng(random_state)
+    diff, ci_low, ci_high = diff_ci_fn(
+        before_values,
+        after_values,
+        paired=paired,
+        alpha=alpha,
+        n_resamples=n_resamples,
+        rng=rng,
+        method=method,
+    )
+    decision = classify_equivalence(ci_low, ci_high, within)
+
+    return EquivalenceResult(
+        decision=decision,
+        column=column,
+        statistic=statistic,
+        paired=paired,
+        before_mean=float(before_values.mean()),
+        after_mean=float(after_values.mean()),
+        diff=diff,
+        ci_low=ci_low,
+        ci_high=ci_high,
+        alpha=alpha,
+        within=within,
+        n_before=len(before_values),
+        n_after=len(after_values),
+        n_resamples=n_resamples if method == "bootstrap" else 0,
+    )
 
 
 class MeanCheck:
@@ -61,33 +112,18 @@ class MeanCheck:
         `random_state` control the resampling; both are unused for the
         analytical path.
         """
-        rng = np.random.default_rng(random_state)
-        diff, ci_low, ci_high = mean_diff_ci(
-            self._before_values,
-            self._after_values,
+        return _equivalence_result(
+            diff_ci_fn=mean_diff_ci,
+            statistic="mean",
+            column=self._column,
             paired=self._paired,
+            before_values=self._before_values,
+            after_values=self._after_values,
+            within=within,
             alpha=alpha,
             n_resamples=n_resamples,
-            rng=rng,
+            random_state=random_state,
             method=method,
-        )
-        decision = classify_equivalence(ci_low, ci_high, within)
-
-        return EquivalenceResult(
-            decision=decision,
-            column=self._column,
-            statistic="mean",
-            paired=self._paired,
-            before_mean=float(self._before_values.mean()),
-            after_mean=float(self._after_values.mean()),
-            diff=diff,
-            ci_low=ci_low,
-            ci_high=ci_high,
-            alpha=alpha,
-            within=within,
-            n_before=len(self._before_values),
-            n_after=len(self._after_values),
-            n_resamples=n_resamples if method == "bootstrap" else 0,
         )
 
 
@@ -143,33 +179,18 @@ class RateCheck:
         above: a sample with an observed rate of exactly 0 or 1 will still
         produce a degenerate, zero-width bootstrap interval.
         """
-        rng = np.random.default_rng(random_state)
-        diff, ci_low, ci_high = rate_diff_ci(
-            self._before_values,
-            self._after_values,
+        return _equivalence_result(
+            diff_ci_fn=rate_diff_ci,
+            statistic="rate",
+            column=self._column,
             paired=self._paired,
+            before_values=self._before_values,
+            after_values=self._after_values,
+            within=within,
             alpha=alpha,
             n_resamples=n_resamples,
-            rng=rng,
+            random_state=random_state,
             method=method,
-        )
-        decision = classify_equivalence(ci_low, ci_high, within)
-
-        return EquivalenceResult(
-            decision=decision,
-            column=self._column,
-            statistic="rate",
-            paired=self._paired,
-            before_mean=float(self._before_values.mean()),
-            after_mean=float(self._after_values.mean()),
-            diff=diff,
-            ci_low=ci_low,
-            ci_high=ci_high,
-            alpha=alpha,
-            within=within,
-            n_before=len(self._before_values),
-            n_after=len(self._after_values),
-            n_resamples=n_resamples if method == "bootstrap" else 0,
         )
 
 

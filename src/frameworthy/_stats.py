@@ -125,9 +125,16 @@ def _t_interval(
     return observed, observed - margin, observed + margin
 
 
-def _paired_mean_diff_ci(
+def paired_mean_diff_ci(
     before: np.ndarray, after: np.ndarray, *, alpha: float
 ) -> tuple[float, float, float]:
+    """Paired t-interval for the mean of the within-pair differences
+    `after - before`.
+
+    `before` and `after` must be the same length and correspond
+    element-wise. Returns `(observed_diff, ci_low, ci_high)` where the
+    interval is the `(1 - 2 * alpha)` confidence interval.
+    """
     if len(before) != len(after):
         raise ValueError(
             "Paired comparison requires `before` and `after` to have the "
@@ -145,10 +152,15 @@ def _paired_mean_diff_ci(
     return _t_interval(float(diffs.mean()), se, deg_f=n - 1, alpha=alpha)
 
 
-def _independent_mean_diff_ci(
+def independent_mean_diff_ci(
     before: np.ndarray, after: np.ndarray, *, alpha: float
 ) -> tuple[float, float, float]:
-    """Welch's (unequal-variance) t-interval for two independent samples."""
+    """Welch's (unequal-variance) t-interval for two independent samples.
+
+    Returns `(observed_diff, ci_low, ci_high)` where `observed_diff` is
+    `after.mean() - before.mean()` and the interval is the `(1 - 2 * alpha)`
+    confidence interval.
+    """
     if len(before) < 2 or len(after) < 2:
         raise ValueError(
             "At least 2 observations per side are required for an analytical "
@@ -192,8 +204,8 @@ def analytical_mean_diff_ci(
     _validate_alpha(alpha)
 
     if paired:
-        return _paired_mean_diff_ci(before, after, alpha=alpha)
-    return _independent_mean_diff_ci(before, after, alpha=alpha)
+        return paired_mean_diff_ci(before, after, alpha=alpha)
+    return independent_mean_diff_ci(before, after, alpha=alpha)
 
 
 def mean_diff_ci(
@@ -335,16 +347,22 @@ def paired_rate_diff_ci(
     l_after, u_after = wilson_interval(int(after.sum()), n, alpha)
     phi = _paired_phi(before, after)
 
-    low = diff - np.sqrt(
+    # each radicand is non-negative by construction given a valid
+    # correlation `phi`, but clamp anyway as a floating-point safety net
+    # against a borderline case producing a tiny negative value and
+    # silently propagating `nan`
+    low_radicand = (
         (p_after - l_after) ** 2
         - 2 * phi * (p_after - l_after) * (u_before - p_before)
         + (u_before - p_before) ** 2
     )
-    high = diff + np.sqrt(
+    high_radicand = (
         (p_before - l_before) ** 2
         - 2 * phi * (p_before - l_before) * (u_after - p_after)
         + (u_after - p_after) ** 2
     )
+    low = diff - np.sqrt(max(low_radicand, 0.0))
+    high = diff + np.sqrt(max(high_radicand, 0.0))
     return diff, float(low), float(high)
 
 
