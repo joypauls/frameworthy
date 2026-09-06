@@ -1,4 +1,5 @@
 from collections.abc import Sequence
+from typing import ClassVar, TypeVar
 
 import numpy as np
 from narwhals.stable.v2.typing import IntoDataFrame
@@ -37,10 +38,10 @@ def _equivalence_result(
     within: float,
     inference: InferenceConfig,
 ) -> EquivalenceResult:
-    """Shared implementation behind `MeanCheck.equivalent()` and
-    `RateCheck.equivalent()`: run `diff_func` (either `mean_diff_ci` or
-    `rate_diff_ci`, which share a signature), classify the resulting CI,
-    and package everything into an `EquivalenceResult`.
+    """Shared implementation behind every metric's `.equivalent()`: run
+    `diff_func` (either `mean_diff_ci` or `rate_diff_ci`, which share a
+    signature), classify the resulting CI, and package everything into an
+    `EquivalenceResult`.
     """
     diff, ci_low, ci_high = diff_func(
         before_values,
@@ -83,11 +84,10 @@ def _change_result(
     direction: Direction,
     inference: InferenceConfig,
 ) -> ChangeResult:
-    """Shared implementation behind `MeanCheck.change_greater_than()`,
-    `MeanCheck.change_less_than()`, and their `RateCheck` counterparts: run
-    `diff_func` (either `mean_diff_ci` or `rate_diff_ci`), classify the
-    resulting CI against `threshold` in the given `direction`, and package
-    everything into a `ChangeResult`.
+    """Shared implementation behind every metric's `.change_greater_than()`/
+    `.change_less_than()`: run `diff_func` (either `mean_diff_ci` or
+    `rate_diff_ci`), classify the resulting CI against `threshold` in the
+    given `direction`, and package everything into a `ChangeResult`.
 
     The same `(1 - 2 * alpha)` two-sided CI used by equivalence checks is
     reused here: each of its endpoints is individually a valid `(1 - alpha)`
@@ -124,11 +124,26 @@ def _change_result(
     )
 
 
-class MeanCheck:
-    """A check bound to comparing the mean of one column between two datasets.
+class MetricCheck:
+    """Shared base for `MeanCheck`/`RateCheck`, and for any future built-in
+    metric: holds the common `before`/`after` construction and defines
+    `.equivalent()`, `.change_greater_than()`, and `.change_less_than()`
+    exactly once, in terms of two things each subclass declares:
 
-    Returned by `Check.mean(...)`; not meant to be constructed directly.
+    * `_statistic`: the `Statistic` this metric represents.
+    * `_diff_func`: the `DiffCIFunc` (e.g. `mean_diff_ci`/`rate_diff_ci`)
+      used to estimate `after - before` and its confidence interval.
+
+    Subclasses may also override `_validate_values()` to add metric-specific
+    validation of the extracted `before`/`after` arrays (e.g. `RateCheck`
+    requires binary values).
+
+    Not meant to be constructed directly; use `Check.mean(...)`/
+    `Check.rate(...)` instead.
     """
+
+    _statistic: ClassVar[Statistic]
+    _diff_func: ClassVar[DiffCIFunc]
 
     def __init__(
         self,
@@ -141,29 +156,30 @@ class MeanCheck:
         self._paired = paired
         self._before_values = np.asarray(before_values, dtype=float)
         self._after_values = np.asarray(after_values, dtype=float)
+        self._validate_values()
+
+    def _validate_values(self) -> None:
+        """Hook for metric-specific validation of `before`/`after` values.
+        No-op by default.
+        """
 
     def equivalent(
         self,
         within: float,
+        *,
         alpha: float = DEFAULT_ALPHA,
         n_resamples: int = DEFAULT_N_RESAMPLES,
         random_state: int | np.random.Generator | None = None,
         method: InferenceMethod = DEFAULT_INFERENCE_METHOD,
     ) -> EquivalenceResult:
-        """Test whether the mean difference is equivalent within `within`.
+        """Test whether the difference (after - before) is equivalent
+        within `within`.
 
-        Builds a `(1 - 2 * alpha)` confidence interval for the mean
-        difference (after - before), then classifies it against the
-        `within` margin as `equivalent`, `changed`, or `inconclusive`. See
-        `frameworthy._classify` for the decision rule.
-
-        The mean has a closed-form interval, so `method` defaults to
-        `"analytical"` (a t-interval for paired differences, or a Welch/
-        unequal-variance t-interval for independent samples) instead of
-        bootstrap resampling. Pass `method="bootstrap"` to use percentile
-        bootstrap resampling instead, in which case `n_resamples` and
-        `random_state` control the resampling; both are unused for the
-        analytical path.
+        Builds a `(1 - 2 * alpha)` confidence interval for the difference,
+        then classifies it against the `within` margin as `equivalent`,
+        `changed`, or `inconclusive`. See `frameworthy._classify` for the
+        decision rule, and this class's docstring for the metric-specific
+        inference method and what `method="bootstrap"` changes.
         """
         inference = InferenceConfig(
             alpha=alpha,
@@ -172,8 +188,8 @@ class MeanCheck:
             method=method,
         )
         return _equivalence_result(
-            diff_func=mean_diff_ci,
-            statistic=Statistic.MEAN,
+            diff_func=self._diff_func,
+            statistic=self._statistic,
             column=self._column,
             paired=self._paired,
             before_values=self._before_values,
@@ -185,23 +201,25 @@ class MeanCheck:
     def change_greater_than(
         self,
         threshold: float,
+        *,
         alpha: float = DEFAULT_ALPHA,
         n_resamples: int = DEFAULT_N_RESAMPLES,
         random_state: int | np.random.Generator | None = None,
         method: InferenceMethod = DEFAULT_INFERENCE_METHOD,
     ) -> ChangeResult:
-        """Rule out that the mean difference (after - before) is `threshold`
-        or smaller -- e.g. ruling out an unacceptable drop when `threshold`
-        is negative.
+        """Rule out that the difference (after - before) is `threshold` or
+        smaller -- e.g. ruling out an unacceptable drop when `threshold` is
+        negative.
 
-        Builds a `(1 - alpha)` one-sided lower confidence bound for the mean
+        Builds a `(1 - alpha)` one-sided lower confidence bound for the
         difference and checks it against `threshold`: `passed` if the bound
         is above `threshold`, `failed` if the data instead confirms the
         difference is at or below `threshold`, `inconclusive` if the
         available data can't establish either.
 
-        Uses the same `mean_diff_ci` machinery (and `method`/`n_resamples`/
-        `random_state` semantics) as `.equivalent()`.
+        Uses the same inference machinery (and `method`/`n_resamples`/
+        `random_state` semantics) as `.equivalent()`; see this class's
+        docstring for metric-specific details.
         """
         inference = InferenceConfig(
             alpha=alpha,
@@ -210,8 +228,8 @@ class MeanCheck:
             method=method,
         )
         return _change_result(
-            diff_func=mean_diff_ci,
-            statistic=Statistic.MEAN,
+            diff_func=self._diff_func,
+            statistic=self._statistic,
             column=self._column,
             paired=self._paired,
             before_values=self._before_values,
@@ -224,23 +242,25 @@ class MeanCheck:
     def change_less_than(
         self,
         threshold: float,
+        *,
         alpha: float = DEFAULT_ALPHA,
         n_resamples: int = DEFAULT_N_RESAMPLES,
         random_state: int | np.random.Generator | None = None,
         method: InferenceMethod = DEFAULT_INFERENCE_METHOD,
     ) -> ChangeResult:
-        """Rule out that the mean difference (after - before) is `threshold`
-        or larger -- e.g. ruling out an unacceptable increase in a metric
-        like latency.
+        """Rule out that the difference (after - before) is `threshold` or
+        larger -- e.g. ruling out an unacceptable increase in a metric like
+        latency or an error rate.
 
-        Builds a `(1 - alpha)` one-sided upper confidence bound for the mean
+        Builds a `(1 - alpha)` one-sided upper confidence bound for the
         difference and checks it against `threshold`: `passed` if the bound
         is below `threshold`, `failed` if the data instead confirms the
         difference is at or above `threshold`, `inconclusive` if the
         available data can't establish either.
 
-        Uses the same `mean_diff_ci` machinery (and `method`/`n_resamples`/
-        `random_state` semantics) as `.equivalent()`.
+        Uses the same inference machinery (and `method`/`n_resamples`/
+        `random_state` semantics) as `.equivalent()`; see this class's
+        docstring for metric-specific details.
         """
         inference = InferenceConfig(
             alpha=alpha,
@@ -249,8 +269,8 @@ class MeanCheck:
             method=method,
         )
         return _change_result(
-            diff_func=mean_diff_ci,
-            statistic=Statistic.MEAN,
+            diff_func=self._diff_func,
+            statistic=self._statistic,
             column=self._column,
             paired=self._paired,
             before_values=self._before_values,
@@ -261,153 +281,55 @@ class MeanCheck:
         )
 
 
-class RateCheck:
+class MeanCheck(MetricCheck):
+    """A check bound to comparing the mean of one column between two datasets.
+
+    Returned by `Check.mean(...)`; not meant to be constructed directly.
+
+    The mean has a closed-form interval, so `method` defaults to
+    `"analytical"` (a t-interval for paired differences, or a Welch/
+    unequal-variance t-interval for independent samples) instead of
+    bootstrap resampling. Pass `method="bootstrap"` on any claim method to
+    use percentile bootstrap resampling instead, in which case
+    `n_resamples` and `random_state` control the resampling; both are
+    unused for the analytical path.
+    """
+
+    _statistic = Statistic.MEAN
+    _diff_func = staticmethod(mean_diff_ci)
+
+
+class RateCheck(MetricCheck):
     """A check bound to comparing the rate (proportion) of one binary
     column between two datasets.
 
     Returned by `Check.rate(...)`; not meant to be constructed directly.
+
+    Unlike `MeanCheck`, the default `method="analytical"` path doesn't fit
+    a t-interval to the raw 0/1 values; it combines Wilson score intervals
+    for the before/after proportions (Newcombe's method), which stays
+    well-behaved even when an observed rate is exactly 0 or 1 -- a case
+    where a Wald/t-style interval on the raw values would collapse to a
+    single point despite genuine uncertainty.
+
+    Pass `method="bootstrap"` on any claim method to use percentile
+    bootstrap resampling instead, in which case `n_resamples` and
+    `random_state` control the resampling. Note that the bootstrap path
+    resamples the raw 0/1 values directly, so it does *not* get the
+    boundary-case protection above: a sample with an observed rate of
+    exactly 0 or 1 will still produce a degenerate, zero-width bootstrap
+    interval.
     """
 
-    def __init__(
-        self,
-        column: str,
-        paired: bool,
-        before_values: np.ndarray,
-        after_values: np.ndarray,
-    ) -> None:
-        self._column = column
-        self._paired = paired
-        self._before_values = np.asarray(before_values, dtype=float)
-        self._after_values = np.asarray(after_values, dtype=float)
+    _statistic = Statistic.RATE
+    _diff_func = staticmethod(rate_diff_ci)
+
+    def _validate_values(self) -> None:
         assert_binary_values(self._before_values, "before")
         assert_binary_values(self._after_values, "after")
 
-    def equivalent(
-        self,
-        within: float,
-        alpha: float = DEFAULT_ALPHA,
-        n_resamples: int = DEFAULT_N_RESAMPLES,
-        random_state: int | np.random.Generator | None = None,
-        method: InferenceMethod = DEFAULT_INFERENCE_METHOD,
-    ) -> EquivalenceResult:
-        """Test whether the rate (proportion) difference is equivalent
-        within `within`.
 
-        Builds a `(1 - 2 * alpha)` confidence interval for the difference
-        in rates (after - before), then classifies it against the `within`
-        margin as `equivalent`, `changed`, or `inconclusive`. `within` is a
-        plain proportion, e.g. `within=0.005` means half a percentage
-        point. See `frameworthy._classify` for the decision rule.
-
-        Unlike `MeanCheck`, the default `method="analytical"` path doesn't
-        fit a t-interval to the raw 0/1 values; it combines Wilson score
-        intervals for the before/after proportions (Newcombe's method),
-        which stays well-behaved even when an observed rate is exactly 0
-        or 1 -- a case where a Wald/t-style interval on the raw values
-        would collapse to a single point despite genuine uncertainty.
-
-        Pass `method="bootstrap"` to use percentile bootstrap resampling
-        instead, in which case `n_resamples` and `random_state` control the
-        resampling. Note that the bootstrap path resamples the raw 0/1
-        values directly, so it does *not* get the boundary-case protection
-        above: a sample with an observed rate of exactly 0 or 1 will still
-        produce a degenerate, zero-width bootstrap interval.
-        """
-        inference = InferenceConfig(
-            alpha=alpha,
-            n_resamples=n_resamples,
-            random_state=random_state,
-            method=method,
-        )
-        return _equivalence_result(
-            diff_func=rate_diff_ci,
-            statistic=Statistic.RATE,
-            column=self._column,
-            paired=self._paired,
-            before_values=self._before_values,
-            after_values=self._after_values,
-            within=within,
-            inference=inference,
-        )
-
-    def change_greater_than(
-        self,
-        threshold: float,
-        alpha: float = DEFAULT_ALPHA,
-        n_resamples: int = DEFAULT_N_RESAMPLES,
-        random_state: int | np.random.Generator | None = None,
-        method: InferenceMethod = DEFAULT_INFERENCE_METHOD,
-    ) -> ChangeResult:
-        """Rule out that the rate difference (after - before) is `threshold`
-        or smaller -- e.g. ruling out an unacceptable drop in conversion
-        when `threshold` is a small negative proportion like `-0.005`.
-
-        Builds a `(1 - alpha)` one-sided lower confidence bound for the rate
-        difference and checks it against `threshold`: `passed` if the bound
-        is above `threshold`, `failed` if the data instead confirms the
-        difference is at or below `threshold`, `inconclusive` if the
-        available data can't establish either. `threshold` is a plain
-        proportion, e.g. `threshold=-0.005` means half a percentage point.
-
-        Uses the same `rate_diff_ci` machinery (and `method`/`n_resamples`/
-        `random_state` semantics) as `.equivalent()`.
-        """
-        inference = InferenceConfig(
-            alpha=alpha,
-            n_resamples=n_resamples,
-            random_state=random_state,
-            method=method,
-        )
-        return _change_result(
-            diff_func=rate_diff_ci,
-            statistic=Statistic.RATE,
-            column=self._column,
-            paired=self._paired,
-            before_values=self._before_values,
-            after_values=self._after_values,
-            threshold=threshold,
-            direction="greater_than",
-            inference=inference,
-        )
-
-    def change_less_than(
-        self,
-        threshold: float,
-        alpha: float = DEFAULT_ALPHA,
-        n_resamples: int = DEFAULT_N_RESAMPLES,
-        random_state: int | np.random.Generator | None = None,
-        method: InferenceMethod = DEFAULT_INFERENCE_METHOD,
-    ) -> ChangeResult:
-        """Rule out that the rate difference (after - before) is `threshold`
-        or larger -- e.g. ruling out an unacceptable rise in an error rate.
-
-        Builds a `(1 - alpha)` one-sided upper confidence bound for the rate
-        difference and checks it against `threshold`: `passed` if the bound
-        is below `threshold`, `failed` if the data instead confirms the
-        difference is at or above `threshold`, `inconclusive` if the
-        available data can't establish either. `threshold` is a plain
-        proportion, e.g. `threshold=0.005` means half a percentage point.
-
-        Uses the same `rate_diff_ci` machinery (and `method`/`n_resamples`/
-        `random_state` semantics) as `.equivalent()`.
-        """
-        inference = InferenceConfig(
-            alpha=alpha,
-            n_resamples=n_resamples,
-            random_state=random_state,
-            method=method,
-        )
-        return _change_result(
-            diff_func=rate_diff_ci,
-            statistic=Statistic.RATE,
-            column=self._column,
-            paired=self._paired,
-            before_values=self._before_values,
-            after_values=self._after_values,
-            threshold=threshold,
-            direction="less_than",
-            inference=inference,
-        )
+MetricCheckT = TypeVar("MetricCheckT", bound=MetricCheck)
 
 
 class Check:
@@ -473,6 +395,27 @@ class Check:
             self._before, self._after, column, self._paired_by
         )
 
+    def _metric_check(
+        self,
+        cls: type[MetricCheckT],
+        column: str,
+        before: str | None,
+        metric: str,
+    ) -> MetricCheckT:
+        """Shared implementation behind `.mean()` and `.rate()`: extract
+        `before`/`after` values for `column` and construct `cls` (either
+        `MeanCheck` or `RateCheck`) from them.
+        """
+        before_values, after_values, paired = self._extract_before_after(
+            column, before, metric
+        )
+        return cls(
+            column=column,
+            paired=paired,
+            before_values=before_values,
+            after_values=after_values,
+        )
+
     def mean(self, column: str, before: str | None = None) -> MeanCheck:
         """Select a column and compare its mean between `before` and `after`.
 
@@ -482,15 +425,7 @@ class Check:
         omitted and `column` is compared between the two dataframes passed
         to `check()`.
         """
-        before_values, after_values, paired = self._extract_before_after(
-            column, before, "mean"
-        )
-        return MeanCheck(
-            column=column,
-            paired=paired,
-            before_values=before_values,
-            after_values=after_values,
-        )
+        return self._metric_check(MeanCheck, column, before, "mean")
 
     def rate(self, column: str, before: str | None = None) -> RateCheck:
         """Select a binary (0/1 or boolean) column and compare its rate
@@ -502,15 +437,7 @@ class Check:
         omitted and `column` is compared between the two dataframes passed
         to `check()`.
         """
-        before_values, after_values, paired = self._extract_before_after(
-            column, before, "rate"
-        )
-        return RateCheck(
-            column=column,
-            paired=paired,
-            before_values=before_values,
-            after_values=after_values,
-        )
+        return self._metric_check(RateCheck, column, before, "rate")
 
 
 def check(

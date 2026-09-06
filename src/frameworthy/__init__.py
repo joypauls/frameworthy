@@ -7,7 +7,7 @@ from frameworthy._errors import (
     InvalidParameterError,
     UsageError,
 )
-from frameworthy.check import Check, MeanCheck, RateCheck, check
+from frameworthy.check import Check, MeanCheck, MetricCheck, RateCheck, check
 from frameworthy.decision import Decision
 from frameworthy.results import ChangeResult, EquivalenceResult
 
@@ -23,6 +23,7 @@ __all__ = [
     "InvalidColumnDataError",
     "InvalidParameterError",
     "MeanCheck",
+    "MetricCheck",
     "RateCheck",
     "UsageError",
     "check",
