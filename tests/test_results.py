@@ -65,6 +65,36 @@ class TestStr:
         assert "n_before=30" in text
         assert "n_after=45" in text
 
+    def test_rate_formats_diff_and_margin_in_percentage_points(self):
+        result = _make_result(
+            Decision.EQUIVALENT,
+            statistic="rate",
+            before_mean=0.40,
+            after_mean=0.45,
+            diff=0.05,
+            ci_low=-0.01,
+            ci_high=0.03,
+            within=0.005,
+        )
+        text = str(result)
+
+        assert "rate(revenue)" in text
+        assert "before = 40.0%" in text
+        assert "after = 45.0%" in text
+        assert "+5pp" in text
+        assert "[-1pp, +3pp]" in text
+        assert "\u00b10.5pp" in text  # ±0.5pp
+        # a raw proportion like 0.005 shouldn't leak through unformatted
+        assert "0.005" not in text
+
+    def test_mean_does_not_show_percentage_point_formatting(self):
+        result = _make_result(Decision.EQUIVALENT, statistic="mean")
+        text = str(result)
+
+        assert "pp" not in text
+        assert "before =" not in text
+        assert "after =" not in text
+
 
 class TestRaiseForStatus:
     def test_equivalent_does_not_raise_or_warn(self, recwarn):

@@ -40,11 +40,26 @@ class EquivalenceResult:
             if self.paired
             else f"unpaired, n_before={self.n_before}, n_after={self.n_after}"
         )
+
+        if self.statistic == "rate":
+            # report rates and their difference/margin in percentage points,
+            # which reads more intuitively than raw proportions
+            levels = f"before = {self.before_mean:.1%}, after = {self.after_mean:.1%}, "
+            diff_str = f"{self.diff * 100:+.4g}pp"
+            ci_str = f"[{self.ci_low * 100:+.4g}pp, {self.ci_high * 100:+.4g}pp]"
+            margin_str = f"±{self.within * 100:g}pp"
+        else:
+            levels = ""
+            diff_str = f"{self.diff:+.4g}"
+            ci_str = f"[{self.ci_low:+.4g}, {self.ci_high:+.4g}]"
+            margin_str = f"±{self.within:g}"
+
         return (
             f"{self.decision.value.upper()}: {self.statistic}({self.column}) "
-            f"diff (after - before) = {self.diff:+.4g}, "
-            f"{ci_pct}% CI = [{self.ci_low:+.4g}, {self.ci_high:+.4g}], "
-            f"margin = ±{self.within:g}, alpha = {self.alpha:g}, {pairing}"
+            f"{levels}"
+            f"diff (after - before) = {diff_str}, "
+            f"{ci_pct}% CI = {ci_str}, "
+            f"margin = {margin_str}, alpha = {self.alpha:g}, {pairing}"
         )
 
     def raise_for_status(self) -> None:
