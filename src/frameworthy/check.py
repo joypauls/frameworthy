@@ -3,7 +3,11 @@ from collections.abc import Sequence
 import numpy as np
 from narwhals.stable.v2.typing import IntoDataFrame
 
-from ._arrays import paired_values_from_columns, values_from_two_frames
+from ._arrays import (
+    assert_binary_values,
+    paired_values_from_columns,
+    values_from_two_frames,
+)
 from ._backend import to_narwhals_frame
 from ._constants import (
     DEFAULT_ALPHA,
@@ -12,7 +16,7 @@ from ._constants import (
     InferenceMethod,
 )
 from ._pairing import _normalize_keys, assert_unique_keys
-from ._stats import classify_equivalence, mean_diff_ci
+from ._stats import classify_equivalence, mean_diff_ci, rate_diff_ci
 from .results import EquivalenceResult
 
 
@@ -87,6 +91,88 @@ class MeanCheck:
         )
 
 
+class RateCheck:
+    """A check bound to comparing the rate (proportion) of one binary
+    column between two datasets.
+
+    Returned by `Check.rate(...)`; not meant to be constructed directly.
+    """
+
+    def __init__(
+        self,
+        column: str,
+        paired: bool,
+        before_values: np.ndarray,
+        after_values: np.ndarray,
+    ) -> None:
+        self._column = column
+        self._paired = paired
+        self._before_values = np.asarray(before_values, dtype=float)
+        self._after_values = np.asarray(after_values, dtype=float)
+        assert_binary_values(self._before_values, "before")
+        assert_binary_values(self._after_values, "after")
+
+    def equivalent(
+        self,
+        within: float,
+        alpha: float = DEFAULT_ALPHA,
+        n_resamples: int = DEFAULT_N_RESAMPLES,
+        random_state: int | np.random.Generator | None = None,
+        method: InferenceMethod = DEFAULT_INFERENCE_METHOD,
+    ) -> EquivalenceResult:
+        """Test whether the rate (proportion) difference is equivalent
+        within `within`.
+
+        Builds a `(1 - 2 * alpha)` confidence interval for the difference
+        in rates (after - before), then classifies it against the `within`
+        margin as `equivalent`, `changed`, or `inconclusive`. `within` is a
+        plain proportion, e.g. `within=0.005` means half a percentage
+        point. See `frameworthy._stats` for the decision rule.
+
+        Unlike `MeanCheck`, the default `method="analytical"` path doesn't
+        fit a t-interval to the raw 0/1 values; it combines Wilson score
+        intervals for the before/after proportions (Newcombe's method),
+        which stays well-behaved even when an observed rate is exactly 0
+        or 1 -- a case where a Wald/t-style interval on the raw values
+        would collapse to a single point despite genuine uncertainty.
+
+        Pass `method="bootstrap"` to use percentile bootstrap resampling
+        instead, in which case `n_resamples` and `random_state` control the
+        resampling. Note that the bootstrap path resamples the raw 0/1
+        values directly, so it does *not* get the boundary-case protection
+        above: a sample with an observed rate of exactly 0 or 1 will still
+        produce a degenerate, zero-width bootstrap interval.
+        """
+        rng = np.random.default_rng(random_state)
+        diff, ci_low, ci_high = rate_diff_ci(
+            self._before_values,
+            self._after_values,
+            paired=self._paired,
+            alpha=alpha,
+            n_resamples=n_resamples,
+            rng=rng,
+            method=method,
+        )
+        decision = classify_equivalence(ci_low, ci_high, within)
+
+        return EquivalenceResult(
+            decision=decision,
+            column=self._column,
+            statistic="rate",
+            paired=self._paired,
+            before_mean=float(self._before_values.mean()),
+            after_mean=float(self._after_values.mean()),
+            diff=diff,
+            ci_low=ci_low,
+            ci_high=ci_high,
+            alpha=alpha,
+            within=within,
+            n_before=len(self._before_values),
+            n_after=len(self._after_values),
+            n_resamples=n_resamples if method == "bootstrap" else 0,
+        )
+
+
 class Check:
     """Entry point for comparing `before` and `after` dataframe-like data.
 
@@ -114,21 +200,19 @@ class Check:
             assert_unique_keys(self._before, self._paired_by, "before")
             assert_unique_keys(self._after, self._paired_by, "after")
 
-    def mean(self, column: str, before: str | None = None) -> MeanCheck:
-        """Select a column and compare its mean between `before` and `after`.
-
-        If `check()` was given a single dataframe, pass `before=<column
-        name>` here to compare two columns within that same dataframe as
-        paired observations (row-by-row). Otherwise, `before` must be
-        omitted and `column` is compared between the two dataframes passed
-        to `check()`.
+    def _extract_before_after(
+        self, column: str, before: str | None, metric: str
+    ) -> tuple[np.ndarray, np.ndarray, bool]:
+        """Resolve `before`/`after` values for `column`, shared by `.mean()`
+        and `.rate()`. `metric` (e.g. `"mean"`, `"rate"`) is only used to
+        name the calling method in error messages.
         """
         if self._before is None:
             if before is None:
                 raise ValueError(
-                    "`check()` was given a single dataframe; `.mean()` requires "
-                    "`before=<column name>` to compare two columns in that "
-                    "dataframe."
+                    f"`check()` was given a single dataframe; `.{metric}()` "
+                    "requires `before=<column name>` to compare two columns "
+                    "in that dataframe."
                 )
             if before == column:
                 raise ValueError(
@@ -139,24 +223,52 @@ class Check:
             before_values, after_values = paired_values_from_columns(
                 self._after, before, column, "df"
             )
-            return MeanCheck(
-                column=column,
-                paired=True,
-                before_values=before_values,
-                after_values=after_values,
-            )
+            return before_values, after_values, True
 
         if before is not None:
             raise ValueError(
-                "`before=` on `.mean()` is only used for same-dataframe "
+                f"`before=` on `.{metric}()` is only used for same-dataframe "
                 "comparisons; pass a separate `before` dataframe to `check()` "
                 "instead."
             )
 
-        before_values, after_values, paired = values_from_two_frames(
+        return values_from_two_frames(
             self._before, self._after, column, self._paired_by
         )
+
+    def mean(self, column: str, before: str | None = None) -> MeanCheck:
+        """Select a column and compare its mean between `before` and `after`.
+
+        If `check()` was given a single dataframe, pass `before=<column
+        name>` here to compare two columns within that same dataframe as
+        paired observations (row-by-row). Otherwise, `before` must be
+        omitted and `column` is compared between the two dataframes passed
+        to `check()`.
+        """
+        before_values, after_values, paired = self._extract_before_after(
+            column, before, "mean"
+        )
         return MeanCheck(
+            column=column,
+            paired=paired,
+            before_values=before_values,
+            after_values=after_values,
+        )
+
+    def rate(self, column: str, before: str | None = None) -> RateCheck:
+        """Select a binary (0/1 or boolean) column and compare its rate
+        (proportion) between `before` and `after`.
+
+        If `check()` was given a single dataframe, pass `before=<column
+        name>` here to compare two columns within that same dataframe as
+        paired observations (row-by-row). Otherwise, `before` must be
+        omitted and `column` is compared between the two dataframes passed
+        to `check()`.
+        """
+        before_values, after_values, paired = self._extract_before_after(
+            column, before, "rate"
+        )
+        return RateCheck(
             column=column,
             paired=paired,
             before_values=before_values,
