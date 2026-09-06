@@ -1,6 +1,7 @@
 import pytest
 
 from frameworthy._backend import to_narwhals_frame
+from frameworthy._errors import InvalidColumnDataError
 from frameworthy._pairing import duplicate_keys, join_paired, key_counts
 
 
@@ -88,7 +89,7 @@ def test_join_paired_raises_on_duplicate_keys_in_before(frame_factory):
     before = to_narwhals_frame(frame_factory({"id": [1, 1], "metric": [10.0, 11.0]}))
     after = to_narwhals_frame(frame_factory({"id": [1], "metric": [12.0]}))
 
-    with pytest.raises(ValueError, match="before"):
+    with pytest.raises(InvalidColumnDataError, match="before"):
         join_paired(before, after, "id", ["metric"])
 
 
@@ -96,5 +97,5 @@ def test_join_paired_raises_on_duplicate_keys_in_after(frame_factory):
     before = to_narwhals_frame(frame_factory({"id": [1], "metric": [10.0]}))
     after = to_narwhals_frame(frame_factory({"id": [1, 1], "metric": [12.0, 13.0]}))
 
-    with pytest.raises(ValueError, match="after"):
+    with pytest.raises(InvalidColumnDataError, match="after"):
         join_paired(before, after, "id", ["metric"])

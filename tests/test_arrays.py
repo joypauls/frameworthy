@@ -10,22 +10,27 @@ from frameworthy._arrays import (
     values_from_two_frames,
 )
 from frameworthy._backend import to_narwhals_frame
+from frameworthy._errors import (
+    ColumnNotFoundError,
+    InsufficientDataError,
+    InvalidColumnDataError,
+)
 
 
 def test_assert_column_exists_raises_when_missing():
-    with pytest.raises(KeyError, match="missing"):
+    with pytest.raises(ColumnNotFoundError, match="missing"):
         assert_column_exists(["a", "b"], "missing", "df")
 
 
 def test_assert_min_count_raises_below_minimum():
-    with pytest.raises(ValueError, match="No usable"):
+    with pytest.raises(InsufficientDataError, match="No usable"):
         assert_min_count(0, 2, "df")
-    with pytest.raises(ValueError, match="At least 2"):
+    with pytest.raises(InsufficientDataError, match="At least 2"):
         assert_min_count(1, 2, "df")
 
 
 def test_assert_equal_pairs_raises_when_unequal_length():
-    with pytest.raises(ValueError, match="unequal numbers"):
+    with pytest.raises(InvalidColumnDataError, match="unequal numbers"):
         assert_equal_pairs([1.0, 2.0], [3.0], "df")
 
 
@@ -49,7 +54,7 @@ def test_paired_values_from_columns_raises_when_too_few_pairs_remain(frame_facto
         frame_factory({"before": [1.0, None], "after": [2.0, None]})
     )
 
-    with pytest.raises(ValueError, match="At least 2"):
+    with pytest.raises(InsufficientDataError, match="At least 2"):
         paired_values_from_columns(frame, "before", "after", "df")
 
 
@@ -87,7 +92,7 @@ def test_values_from_two_frames_raises_on_missing_column(frame_factory):
     before = to_narwhals_frame(frame_factory({"other": [1.0]}))
     after = to_narwhals_frame(frame_factory({"value": [1.0]}))
 
-    with pytest.raises(KeyError, match="before"):
+    with pytest.raises(ColumnNotFoundError, match="value"):
         values_from_two_frames(before, after, "value", None)
 
 
@@ -95,7 +100,7 @@ def test_values_from_two_frames_raises_when_too_few_usable_values(frame_factory)
     before = to_narwhals_frame(frame_factory({"value": [1.0, None]}))
     after = to_narwhals_frame(frame_factory({"value": [1.0, 2.0]}))
 
-    with pytest.raises(ValueError, match="At least 2"):
+    with pytest.raises(InsufficientDataError, match="At least 2"):
         values_from_two_frames(before, after, "value", None)
 
 
@@ -108,10 +113,10 @@ def test_assert_binary_values_accepts_booleans_cast_to_float():
 
 
 def test_assert_binary_values_rejects_other_numeric_values():
-    with pytest.raises(ValueError, match="binary"):
+    with pytest.raises(InvalidColumnDataError, match="binary"):
         assert_binary_values(np.array([0.0, 1.0, 2.0]), "df")
 
 
 def test_assert_binary_values_rejects_fractional_values():
-    with pytest.raises(ValueError, match="binary"):
+    with pytest.raises(InvalidColumnDataError, match="binary"):
         assert_binary_values(np.array([0.0, 0.5, 1.0]), "df")

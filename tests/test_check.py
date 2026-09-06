@@ -82,7 +82,7 @@ def test_paired_raises_on_duplicate_keys(frame_factory):
     before = frame_factory({"customer_id": [1, 1], "revenue": [10.0, 11.0]})
     after = frame_factory({"customer_id": [1], "revenue": [12.0]})
 
-    with pytest.raises(ValueError, match="before"):
+    with pytest.raises(fw.InvalidColumnDataError, match="before"):
         fw.check(after, before=before, paired_by="customer_id")
 
 
@@ -107,7 +107,7 @@ def test_missing_column_raises_key_error(frame_factory):
     before = frame_factory({"customer_id": [1, 2], "revenue": [10.0, 20.0]})
     after = frame_factory({"customer_id": [1, 2], "revenue": [11.0, 19.0]})
 
-    with pytest.raises(KeyError):
+    with pytest.raises(fw.ColumnNotFoundError):
         fw.check(after, before=before, paired_by="customer_id").mean("missing_col")
 
 
@@ -157,7 +157,7 @@ def test_mean_check_rejects_unknown_method(frame_factory):
     before = frame_factory({"revenue": [1.0, 2.0, 3.0]})
     after = frame_factory({"revenue": [2.0, 3.0, 4.0]})
 
-    with pytest.raises(ValueError, match="Unknown inference"):
+    with pytest.raises(fw.InvalidParameterError, match="Unknown inference"):
         fw.check(after, before=before).mean("revenue").equivalent(
             within=5.0, method="magic"
         )
@@ -285,35 +285,35 @@ class TestSameDataframeComparison:
     def test_requires_two_distinct_columns(self, frame_factory):
         df = frame_factory({"score": [1.0, 2.0, 3.0]})
 
-        with pytest.raises(ValueError, match="different column"):
+        with pytest.raises(fw.UsageError, match="different column"):
             fw.check(df).mean("score", before="score")
 
     def test_requires_before_kwarg_for_single_dataframe(self, frame_factory):
         df = frame_factory({"score_before": [1.0, 2.0], "score_after": [2.0, 3.0]})
 
-        with pytest.raises(ValueError, match="before="):
+        with pytest.raises(fw.UsageError, match="before="):
             fw.check(df).mean("score_after")
 
     def test_rejects_before_kwarg_for_two_dataframe_mode(self, frame_factory):
         before = frame_factory({"revenue": [1.0, 2.0]})
         after = frame_factory({"revenue": [2.0, 3.0]})
 
-        with pytest.raises(ValueError, match="same-dataframe"):
+        with pytest.raises(fw.UsageError, match="same-dataframe"):
             fw.check(after, before=before).mean("revenue", before="revenue")
 
     def test_rejects_paired_by_without_separate_before_dataframe(self, frame_factory):
         df = frame_factory({"customer_id": [1, 2], "score": [1.0, 2.0]})
 
-        with pytest.raises(ValueError, match="paired_by"):
+        with pytest.raises(fw.UsageError, match="paired_by"):
             fw.check(df, paired_by="customer_id")
 
     def test_missing_column_raises_key_error(self, frame_factory):
         df = frame_factory({"score_before": [1.0, 2.0], "score_after": [2.0, 3.0]})
 
-        with pytest.raises(KeyError):
+        with pytest.raises(fw.ColumnNotFoundError):
             fw.check(df).mean("missing_col", before="score_before")
 
-        with pytest.raises(KeyError):
+        with pytest.raises(fw.ColumnNotFoundError):
             fw.check(df).mean("score_after", before="missing_col")
 
     def test_null_only_column_raises_value_error(self, frame_factory):
@@ -321,7 +321,7 @@ class TestSameDataframeComparison:
             {"score_before": [None, None, None], "score_after": [1.0, 2.0, 3.0]}
         )
 
-        with pytest.raises(ValueError, match="No usable"):
+        with pytest.raises(fw.InsufficientDataError, match="No usable"):
             fw.check(df).mean("score_after", before="score_before")
 
     def test_drops_rows_with_nulls_in_either_column(self, frame_factory):
@@ -340,7 +340,7 @@ class TestSameDataframeComparison:
     def test_too_few_usable_pairs_raises_value_error(self, frame_factory):
         df = frame_factory({"score_before": [10.0, None], "score_after": [11.0, None]})
 
-        with pytest.raises(ValueError, match="At least 2"):
+        with pytest.raises(fw.InsufficientDataError, match="At least 2"):
             fw.check(df).mean("score_after", before="score_before")
 
 
@@ -434,7 +434,7 @@ class TestRateCheck:
         before = frame_factory({"count": [0.0, 1.0, 2.0]})
         after = frame_factory({"count": [0.0, 1.0, 1.0]})
 
-        with pytest.raises(ValueError, match="binary"):
+        with pytest.raises(fw.InvalidColumnDataError, match="binary"):
             fw.check(after, before=before).rate("count")
 
     def test_bootstrap_method_is_supported(self, frame_factory):
@@ -478,14 +478,14 @@ class TestRateCheck:
         before = frame_factory({"converted": [0.0, 1.0]})
         after = frame_factory({"converted": [0.0, 1.0]})
 
-        with pytest.raises(KeyError):
+        with pytest.raises(fw.ColumnNotFoundError):
             fw.check(after, before=before).rate("missing_col")
 
     def test_rejects_unknown_method(self, frame_factory):
         before = frame_factory({"converted": [0.0, 1.0, 1.0]})
         after = frame_factory({"converted": [1.0, 1.0, 0.0]})
 
-        with pytest.raises(ValueError, match="Unknown inference"):
+        with pytest.raises(fw.InvalidParameterError, match="Unknown inference"):
             fw.check(after, before=before).rate("converted").equivalent(
                 within=0.5, method="magic"
             )
@@ -670,7 +670,7 @@ class TestChangeLessThan:
         before = frame_factory({"latency_ms": [100.0, 101.0, 99.0]})
         after = frame_factory({"latency_ms": [101.0, 102.0, 100.0]})
 
-        with pytest.raises(ValueError, match="Unknown inference"):
+        with pytest.raises(fw.InvalidParameterError, match="Unknown inference"):
             fw.check(after, before=before).mean("latency_ms").change_less_than(
                 20.0, method="magic"
             )
