@@ -17,7 +17,8 @@ def _validate_bootstrap_args(alpha: float, n_resamples: int) -> None:
 
 
 def wilson_interval(count: int, n: int, alpha: float) -> tuple[float, float]:
-    """Wilson score confidence interval for a single binomial proportion.
+    """
+    Wilson score confidence interval for a single binomial proportion.
 
     `alpha` is interpreted the same way as elsewhere in this module: the
     returned interval is `(1 - 2 * alpha)` two-sided-equivalent, i.e. it's
@@ -87,7 +88,8 @@ def bootstrap_mean_diff_ci(
     n_resamples: int,
     rng: np.random.Generator,
 ) -> tuple[float, float, float]:
-    """Bootstrap the mean difference `after - before` and its confidence interval.
+    """
+    Bootstrap the mean difference `after - before` and its confidence interval.
 
     If `paired`, `before` and `after` must be the same length and correspond
     element-wise; the diffs are resampled together. Otherwise, `before` and
@@ -175,7 +177,8 @@ def analytical_mean_diff_ci(
     paired: bool,
     alpha: float,
 ) -> tuple[float, float, float]:
-    """Analytically compute the mean difference `after - before` and its CI.
+    """
+    Analytically compute the mean difference `after - before` and its CI.
 
     If `paired`, `before` and `after` must be the same length and correspond
     element-wise; the interval is a t-interval for the mean of the
@@ -203,7 +206,8 @@ def mean_diff_ci(
     rng: np.random.Generator,
     method: InferenceMethod = DEFAULT_INFERENCE_METHOD,
 ) -> tuple[float, float, float]:
-    """Select an inference strategy and compute the mean difference CI.
+    """
+    Select an inference strategy and compute the mean difference CI.
 
     This is the single dispatch point between the analytical fast path
     (used by default for built-in `.mean()` checks) and the bootstrap
@@ -222,6 +226,44 @@ def mean_diff_ci(
             rng=rng,
         )
     raise ValueError(f"Unknown inference `method`: {method!r}.")
+
+
+def independent_rate_diff_ci(
+    before: np.ndarray, after: np.ndarray, *, alpha: float
+) -> tuple[float, float, float]:
+    """
+    Newcombe's hybrid score ("MOVER") CI for the difference of two
+    independent binomial proportions.
+
+    `before` and `after` must be 0/1 arrays. Rather than using the sample
+    variance of the raw values (which is what treating this as a plain
+    mean-difference problem would do), this combines Wilson score
+    intervals for the two proportions individually, which avoids the
+    zero-width degenerate interval that a naive Wald/t-based approach
+    produces when a sample's observed rate is exactly 0 or 1.
+
+    Returns `(observed_diff, ci_low, ci_high)` where `observed_diff` is
+    `after.mean() - before.mean()` and the interval is the `(1 - 2 * alpha)`
+    confidence interval.
+    """
+    _validate_alpha(alpha)
+    if len(before) < 2 or len(after) < 2:
+        raise ValueError(
+            "At least 2 observations per side are required for an analytical "
+            "confidence interval."
+        )
+
+    n_before, n_after = len(before), len(after)
+    p_before = float(before.mean())
+    p_after = float(after.mean())
+    diff = p_after - p_before
+
+    l_before, u_before = wilson_interval(int(before.sum()), n_before, alpha)
+    l_after, u_after = wilson_interval(int(after.sum()), n_after, alpha)
+
+    low = diff - np.sqrt((p_after - l_after) ** 2 + (u_before - p_before) ** 2)
+    high = diff + np.sqrt((u_after - p_after) ** 2 + (p_before - l_before) ** 2)
+    return diff, float(low), float(high)
 
 
 def classify_equivalence(ci_low: float, ci_high: float, within: float) -> Decision:

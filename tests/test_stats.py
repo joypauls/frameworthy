@@ -6,6 +6,7 @@ from frameworthy._stats import (
     analytical_mean_diff_ci,
     bootstrap_mean_diff_ci,
     classify_equivalence,
+    independent_rate_diff_ci,
     mean_diff_ci,
     wilson_interval,
 )
@@ -441,3 +442,61 @@ class TestWilsonInterval:
     def test_rejects_count_out_of_range(self):
         with pytest.raises(ValueError, match="`count`"):
             wilson_interval(11, 10, alpha=0.05)
+
+
+class TestIndependentRateDiffCi:
+    def test_matches_published_newcombe_reference(self):
+        # Reference values from Fagerland et al. 2015, as reproduced in
+        # statsmodels' test suite for confint_proportions_2indep(...,
+        # method="newcomb"): count1=7, nobs1=34, count2=1, nobs2=34 gives a
+        # 95% CI of [0.019, 0.340] for diff = p1 - p2.
+        before = np.zeros(34)
+        before[:1] = 1.0
+        after = np.zeros(34)
+        after[:7] = 1.0
+
+        diff, ci_low, ci_high = independent_rate_diff_ci(before, after, alpha=0.025)
+
+        assert diff == pytest.approx(7 / 34 - 1 / 34)
+        assert ci_low == pytest.approx(0.019, abs=0.005)
+        assert ci_high == pytest.approx(0.340, abs=0.005)
+
+    def test_recovers_known_difference_for_large_samples(self):
+        rng = np.random.default_rng(0)
+        before = (rng.random(2000) < 0.30).astype(float)
+        after = (rng.random(2000) < 0.35).astype(float)
+
+        diff, ci_low, ci_high = independent_rate_diff_ci(before, after, alpha=0.05)
+
+        assert diff == pytest.approx(0.05, abs=0.03)
+        assert ci_low < diff < ci_high
+
+    def test_does_not_collapse_when_one_side_is_all_zero(self):
+        before = np.zeros(50)
+        after = np.zeros(50)
+        after[:5] = 1.0
+
+        diff, ci_low, ci_high = independent_rate_diff_ci(before, after, alpha=0.05)
+
+        assert diff == pytest.approx(0.1)
+        assert ci_low < diff < ci_high
+        assert ci_low > -1.0  # not degenerate
+
+    def test_zero_diff_when_both_sides_identical(self):
+        before = np.array([0.0, 1.0, 0.0, 1.0, 1.0])
+        after = before.copy()
+
+        diff, ci_low, ci_high = independent_rate_diff_ci(before, after, alpha=0.05)
+
+        assert diff == pytest.approx(0.0)
+        assert ci_low < 0.0 < ci_high
+
+    def test_requires_at_least_two_observations_per_side(self):
+        with pytest.raises(ValueError, match="At least 2"):
+            independent_rate_diff_ci(np.array([1.0]), np.array([1.0, 0.0]), alpha=0.05)
+
+    def test_rejects_invalid_alpha(self):
+        with pytest.raises(ValueError, match="alpha"):
+            independent_rate_diff_ci(
+                np.array([0.0, 1.0]), np.array([0.0, 1.0]), alpha=0.6
+            )
