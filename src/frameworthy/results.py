@@ -1,17 +1,23 @@
 import warnings
 from dataclasses import dataclass
+from typing import ClassVar
 
 from ._constants import Direction, Statistic
 from ._errors import FrameworthyAssertionError
+from ._format import format_levels, format_margin, format_value
 from .decision import Decision
 
 
 @dataclass(frozen=True)
-class EquivalenceResult:
-    """Result of a paired or unpaired equivalence check.
+class ComparisonResult:
+    """Shared base for `EquivalenceResult` and `ChangeResult`.
 
-    Instances are returned by `.equivalent(...)` and are not meant to be
-    constructed directly.
+    Not meant to be constructed or subclassed outside this module: it
+    holds the fields, `pairing`/`levels` formatting, and `passed`/
+    `raise_for_status` logic common to both kinds of check, and defers to
+    `_claim_summary()` for the part of `__str__` that's specific to each
+    (a two-sided CI + margin for equivalence, a one-sided bound + threshold
+    for a directional change).
     """
 
     decision: Decision
@@ -24,83 +30,91 @@ class EquivalenceResult:
     ci_low: float
     ci_high: float
     alpha: float
-    within: float
     n_before: int
     n_after: int
     n_resamples: int
 
+    # declared by each subclass: which `Decision` means "evidence supports
+    # the claim" vs. "evidence supports the opposite of the claim"
+    _pass_decision: ClassVar[Decision]
+    _fail_decision: ClassVar[Decision]
+
     @property
     def passed(self) -> bool:
-        """Whether the evidence supports equivalence within the margin."""
-        return self.decision == Decision.EQUIVALENT
+        """Whether the evidence supports the claim being tested."""
+        return self.decision == self._pass_decision
+
+    def _claim_summary(self) -> str:
+        """The claim-specific middle portion of `__str__` (including its
+        own trailing ", "). Implemented by each subclass.
+        """
+        raise NotImplementedError
 
     def __str__(self) -> str:
-        ci_pct = round((1 - 2 * self.alpha) * 100)
         pairing = (
             f"paired, n={self.n_before}"
             if self.paired
             else f"unpaired, n_before={self.n_before}, n_after={self.n_after}"
         )
-
-        if self.statistic == "rate":
-            # report rates and their difference/margin in percentage points,
-            # which reads more intuitively than raw proportions
-            levels = f"before = {self.before_mean:.1%}, after = {self.after_mean:.1%}, "
-            diff_str = f"{self.diff * 100:+.4g}pp"
-            ci_str = f"[{self.ci_low * 100:+.4g}pp, {self.ci_high * 100:+.4g}pp]"
-            margin_str = f"±{self.within * 100:g}pp"
-        else:
-            levels = ""
-            diff_str = f"{self.diff:+.4g}"
-            ci_str = f"[{self.ci_low:+.4g}, {self.ci_high:+.4g}]"
-            margin_str = f"±{self.within:g}"
+        levels = format_levels(self.before_mean, self.after_mean, self.statistic)
+        diff_str = format_value(self.diff, self.statistic)
 
         return (
-            f"{self.decision.value.upper()}: {self.statistic}({self.column}) "
+            f"{self.decision.value.upper()}: {self.statistic.value}({self.column}) "
             f"{levels}"
             f"diff (after - before) = {diff_str}, "
-            f"{ci_pct}% CI = {ci_str}, "
-            f"margin = {margin_str}, alpha = {self.alpha:g}, {pairing}"
+            f"{self._claim_summary()}"
+            f"alpha = {self.alpha:g}, {pairing}"
         )
 
     def raise_for_status(self) -> None:
-        """Raise if the evidence supports a change larger than the margin."""
-        if self.decision == Decision.CHANGED:
+        """Raise if the evidence supports the opposite of the claim being
+        tested; warn (but don't raise) if the evidence is inconclusive.
+        """
+        if self.decision == self._fail_decision:
             raise FrameworthyAssertionError(str(self))
         if self.decision == Decision.INCONCLUSIVE:
             warnings.warn(str(self), stacklevel=2)
 
 
 @dataclass(frozen=True)
-class ChangeResult:
+class EquivalenceResult(ComparisonResult):
+    """Result of a paired or unpaired equivalence check.
+
+    Instances are returned by `.equivalent(...)` and are not meant to be
+    constructed directly.
+    """
+
+    within: float
+
+    _pass_decision: ClassVar[Decision] = Decision.EQUIVALENT
+    _fail_decision: ClassVar[Decision] = Decision.CHANGED
+
+    def _claim_summary(self) -> str:
+        ci_pct = round((1 - 2 * self.alpha) * 100)
+        ci_str = (
+            f"[{format_value(self.ci_low, self.statistic)}, "
+            f"{format_value(self.ci_high, self.statistic)}]"
+        )
+        margin_str = format_margin(self.within, self.statistic)
+        return f"{ci_pct}% CI = {ci_str}, margin = {margin_str}, "
+
+
+@dataclass(frozen=True)
+class ChangeResult(ComparisonResult):
     """Result of a one-sided directional change check.
 
     Instances are returned by `.change_greater_than(...)` and
     `.change_less_than(...)` and are not meant to be constructed directly.
     """
 
-    decision: Decision
-    column: str
-    statistic: Statistic
-    paired: bool
-    before_mean: float
-    after_mean: float
-    diff: float
-    ci_low: float
-    ci_high: float
     threshold: float
     direction: Direction
-    alpha: float
-    n_before: int
-    n_after: int
-    n_resamples: int
 
-    @property
-    def passed(self) -> bool:
-        """Whether the evidence rules out crossing the threshold."""
-        return self.decision == Decision.PASSED
+    _pass_decision: ClassVar[Decision] = Decision.PASSED
+    _fail_decision: ClassVar[Decision] = Decision.FAILED
 
-    def __str__(self) -> str:
+    def _claim_summary(self) -> str:
         # each CI endpoint is individually a (1 - alpha) one-sided bound, so
         # only the endpoint relevant to `direction` is reported
         bound_pct = round((1 - self.alpha) * 100)
@@ -113,38 +127,9 @@ class ChangeResult:
             bound = self.ci_high
             method_name = "change_less_than"
 
-        pairing = (
-            f"paired, n={self.n_before}"
-            if self.paired
-            else f"unpaired, n_before={self.n_before}, n_after={self.n_after}"
-        )
-
-        if self.statistic == "rate":
-            # report rates and their difference/threshold/bound in
-            # percentage points, which reads more intuitively than raw
-            # proportions
-            levels = f"before = {self.before_mean:.1%}, after = {self.after_mean:.1%}, "
-            diff_str = f"{self.diff * 100:+.4g}pp"
-            bound_str = f"{bound * 100:+.4g}pp"
-            threshold_str = f"{self.threshold * 100:+.4g}pp"
-        else:
-            levels = ""
-            diff_str = f"{self.diff:+.4g}"
-            bound_str = f"{bound:+.4g}"
-            threshold_str = f"{self.threshold:+.4g}"
-
+        bound_str = format_value(bound, self.statistic)
+        threshold_str = format_value(self.threshold, self.statistic)
         return (
-            f"{self.decision.value.upper()}: {self.statistic}({self.column}) "
-            f"{levels}"
-            f"diff (after - before) = {diff_str}, "
             f"{bound_pct}% one-sided {bound_label} = {bound_str}, "
             f"threshold ({method_name}) = {threshold_str}, "
-            f"alpha = {self.alpha:g}, {pairing}"
         )
-
-    def raise_for_status(self) -> None:
-        """Raise if the evidence confirms crossing the threshold."""
-        if self.decision == Decision.FAILED:
-            raise FrameworthyAssertionError(str(self))
-        if self.decision == Decision.INCONCLUSIVE:
-            warnings.warn(str(self), stacklevel=2)

@@ -1,5 +1,6 @@
 import pytest
 
+from frameworthy._constants import Statistic
 from frameworthy._errors import FrameworthyAssertionError
 from frameworthy.decision import Decision
 from frameworthy.results import ChangeResult, EquivalenceResult
@@ -9,7 +10,7 @@ def _make_result(decision: Decision, **overrides) -> EquivalenceResult:
     defaults = {
         "decision": decision,
         "column": "revenue",
-        "statistic": "mean",
+        "statistic": Statistic.MEAN,
         "paired": True,
         "before_mean": 100.0,
         "after_mean": 101.0,
@@ -30,7 +31,7 @@ def _make_change_result(decision: Decision, **overrides) -> ChangeResult:
     defaults = {
         "decision": decision,
         "column": "latency_ms",
-        "statistic": "mean",
+        "statistic": Statistic.MEAN,
         "paired": True,
         "before_mean": 100.0,
         "after_mean": 105.0,
@@ -90,7 +91,7 @@ class TestStr:
     def test_rate_formats_diff_and_margin_in_percentage_points(self):
         result = _make_result(
             Decision.EQUIVALENT,
-            statistic="rate",
+            statistic=Statistic.RATE,
             before_mean=0.40,
             after_mean=0.45,
             diff=0.05,
@@ -110,7 +111,7 @@ class TestStr:
         assert "0.005" not in text
 
     def test_mean_does_not_show_percentage_point_formatting(self):
-        result = _make_result(Decision.EQUIVALENT, statistic="mean")
+        result = _make_result(Decision.EQUIVALENT, statistic=Statistic.MEAN)
         text = str(result)
 
         assert "pp" not in text
@@ -177,7 +178,7 @@ class TestChangeResultStr:
             ci_low=-0.004,
             ci_high=0.001,
             threshold=-0.005,
-            statistic="rate",
+            statistic=Statistic.RATE,
             before_mean=0.40,
             after_mean=0.398,
         )
@@ -201,7 +202,7 @@ class TestChangeResultStr:
         result = _make_change_result(
             Decision.PASSED,
             direction="greater_than",
-            statistic="rate",
+            statistic=Statistic.RATE,
             before_mean=0.40,
             after_mean=0.398,
             diff=-0.002,
@@ -221,7 +222,7 @@ class TestChangeResultStr:
         assert "0.005" not in text
 
     def test_mean_does_not_show_percentage_point_formatting(self):
-        result = _make_change_result(Decision.PASSED, statistic="mean")
+        result = _make_change_result(Decision.PASSED, statistic=Statistic.MEAN)
         text = str(result)
 
         assert "5pp" not in text
