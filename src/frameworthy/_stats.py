@@ -1,8 +1,12 @@
+from typing import Literal
+
 import numpy as np
 from scipy import stats
 
 from ._constants import DEFAULT_INFERENCE_METHOD, InferenceMethod
 from .decision import Decision
+
+Direction = Literal["greater_than", "less_than"]
 
 
 def _validate_alpha(alpha: float) -> None:
@@ -441,3 +445,36 @@ def classify_equivalence(ci_low: float, ci_high: float, within: float) -> Decisi
     if ci_high < -within or ci_low > within:
         return Decision.CHANGED
     return Decision.INCONCLUSIVE
+
+
+def classify_change_bound(
+    ci_low: float, ci_high: float, threshold: float, *, direction: Direction
+) -> Decision:
+    """
+    Classify a difference CI against a one-sided change threshold.
+
+    `ci_low` and `ci_high` come from the same `(1 - 2 * alpha)` two-sided CI
+    used by equivalence checks; each endpoint on its own is also a valid
+    `(1 - alpha)` one-sided confidence bound, which is what makes this a
+    statistically valid one-sided decision rule without any new interval math.
+
+    * `direction="greater_than"` (ruling out a drop below `threshold`):
+      `PASSED` if `ci_low > threshold`, `FAILED` if `ci_high < threshold`,
+      `INCONCLUSIVE` otherwise.
+    * `direction="less_than"` (ruling out a rise above `threshold`):
+      `PASSED` if `ci_high < threshold`, `FAILED` if `ci_low > threshold`,
+      `INCONCLUSIVE` otherwise.
+    """
+    if direction == "greater_than":
+        if ci_low > threshold:
+            return Decision.PASSED
+        if ci_high < threshold:
+            return Decision.FAILED
+        return Decision.INCONCLUSIVE
+    if direction == "less_than":
+        if ci_high < threshold:
+            return Decision.PASSED
+        if ci_low > threshold:
+            return Decision.FAILED
+        return Decision.INCONCLUSIVE
+    raise ValueError(f"Unknown `direction`: {direction!r}.")
