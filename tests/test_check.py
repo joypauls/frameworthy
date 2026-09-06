@@ -1,282 +1,168 @@
-import numpy as np
 import pytest
+from conftest import paired_mean_arrays, rate_array, unpaired_mean_arrays
 
 import frameworthy as fw
 from frameworthy._backend import to_narwhals_frame
 
+# --- Deterministic verdict fixtures ------------------------------------
+#
+# Each entry is a `(before, after)` pair of numpy arrays, tuned (via
+# `linspace`/exact counts, not RNG) so that the resulting confidence
+# interval lands unambiguously on the target verdict for the margin/
+# threshold used alongside it below. See `conftest.py` for the builders.
 
-def test_paired_equivalent_within_margin(frame_factory):
-    rng = np.random.default_rng(1)
-    ids = list(range(200))
-    before_revenue = rng.normal(loc=100.0, scale=5.0, size=200)
-    after_revenue = before_revenue + rng.normal(loc=0.2, scale=0.5, size=200)
+MARGIN = {"mean": 2.0, "rate": 0.05}
+GREATER_THAN_THRESHOLD = {"mean": -2.0, "rate": -0.005}
+LESS_THAN_THRESHOLD = {"mean": 20.0, "rate": 0.05}
 
-    before = frame_factory({"customer_id": ids, "revenue": before_revenue})
-    after = frame_factory({"customer_id": ids, "revenue": after_revenue})
+EQUIVALENT_ARRAYS = {
+    ("mean", True): paired_mean_arrays(n=20, diff=0.3, spread=1.0),
+    ("mean", False): unpaired_mean_arrays(20, 22, 100.0, 100.3, spread=1.0),
+    ("rate", True): (rate_array(500, 0.30), rate_array(500, 0.31)),
+    ("rate", False): (rate_array(2000, 0.30), rate_array(2000, 0.31)),
+}
+CHANGED_ARRAYS = {
+    ("mean", True): paired_mean_arrays(n=20, diff=10.0, spread=1.0),
+    ("mean", False): unpaired_mean_arrays(20, 22, 100.0, 110.0, spread=1.0),
+    ("rate", True): (rate_array(500, 0.30), rate_array(500, 0.50)),
+    ("rate", False): (rate_array(400, 0.30), rate_array(450, 0.50)),
+}
+EQUIVALENCE_INCONCLUSIVE_ARRAYS = {
+    ("mean", True): paired_mean_arrays(n=6, diff=1.0, spread=4.0),
+    ("mean", False): unpaired_mean_arrays(4, 4, 100.0, 101.0, spread=2.5),
+    ("rate", True): (rate_array(30, 0.30), rate_array(30, 0.40)),
+    ("rate", False): (rate_array(30, 0.30), rate_array(30, 0.45)),
+}
 
-    result = (
-        fw.check(after, before=before, paired_by="customer_id")
-        .mean("revenue")
-        .equivalent(within=2.0, alpha=0.05, random_state=0)
-    )
+# `change_greater_than(GREATER_THAN_THRESHOLD)`: rules out a drop.
+GREATER_THAN_PASSED_ARRAYS = {
+    "mean": paired_mean_arrays(n=20, diff=0.3, spread=1.0),
+    "rate": (rate_array(500, 0.30), rate_array(500, 0.30)),
+}
+GREATER_THAN_FAILED_ARRAYS = {
+    "mean": paired_mean_arrays(n=20, diff=-10.0, spread=1.0),
+    "rate": (rate_array(500, 0.40), rate_array(500, 0.10)),
+}
+GREATER_THAN_INCONCLUSIVE_ARRAYS = {
+    "mean": paired_mean_arrays(n=6, diff=-1.5, spread=4.0),
+    "rate": (rate_array(40, 0.30), rate_array(40, 0.28)),
+}
 
-    assert result.decision == "equivalent"
-    assert result.passed is True
-    assert result.paired is True
-    assert result.n_before == result.n_after == 200
-    result.raise_for_status()  # should not raise
-
-
-def test_paired_changed_beyond_margin(frame_factory):
-    rng = np.random.default_rng(2)
-    ids = list(range(200))
-    before_revenue = rng.normal(loc=100.0, scale=5.0, size=200)
-    after_revenue = before_revenue + rng.normal(loc=10.0, scale=0.5, size=200)
-
-    before = frame_factory({"customer_id": ids, "revenue": before_revenue})
-    after = frame_factory({"customer_id": ids, "revenue": after_revenue})
-
-    result = (
-        fw.check(after, before=before, paired_by="customer_id")
-        .mean("revenue")
-        .equivalent(within=2.0, alpha=0.05, random_state=0)
-    )
-
-    assert result.decision == "changed"
-    assert result.passed is False
-    with pytest.raises(fw.FrameworthyAssertionError):
-        result.raise_for_status()
-
-
-def test_paired_inconclusive_with_small_noisy_sample(frame_factory):
-    rng = np.random.default_rng(3)
-    ids = list(range(6))
-    before_revenue = rng.normal(loc=100.0, scale=5.0, size=6)
-    after_revenue = before_revenue + rng.normal(loc=1.5, scale=3.0, size=6)
-
-    before = frame_factory({"customer_id": ids, "revenue": before_revenue})
-    after = frame_factory({"customer_id": ids, "revenue": after_revenue})
-
-    result = (
-        fw.check(after, before=before, paired_by="customer_id")
-        .mean("revenue")
-        .equivalent(within=2.0, alpha=0.05, random_state=0)
-    )
-
-    assert result.decision == "inconclusive"
-    with pytest.warns(UserWarning):
-        result.raise_for_status()  # should not raise, only warn
+# `change_less_than(LESS_THAN_THRESHOLD)`: rules out a rise.
+LESS_THAN_PASSED_ARRAYS = {
+    "mean": unpaired_mean_arrays(300, 300, 100.0, 102.0, spread=5.0),
+    "rate": (rate_array(500, 0.02), rate_array(500, 0.025)),
+}
+LESS_THAN_FAILED_ARRAYS = {
+    "mean": unpaired_mean_arrays(300, 300, 100.0, 140.0, spread=5.0),
+    "rate": (rate_array(500, 0.02), rate_array(500, 0.15)),
+}
+LESS_THAN_INCONCLUSIVE_ARRAYS = {
+    "mean": unpaired_mean_arrays(6, 6, 100.0, 118.0, spread=8.0),
+    "rate": (rate_array(60, 0.02), rate_array(60, 0.08)),
+}
 
 
-def test_paired_aligns_on_key_and_drops_unmatched(frame_factory):
-    before = frame_factory({"customer_id": [1, 2, 3], "revenue": [10.0, 20.0, 30.0]})
-    after = frame_factory({"customer_id": [2, 3, 4], "revenue": [21.0, 31.0, 41.0]})
-
-    mean_check = fw.check(after, before=before, paired_by="customer_id").mean("revenue")
-
-    assert mean_check._before_values.tolist() == [20.0, 30.0]
-    assert mean_check._after_values.tolist() == [21.0, 31.0]
+def _column_name(metric: str) -> str:
+    return "revenue" if metric == "mean" else "converted"
 
 
-def test_paired_raises_on_duplicate_keys(frame_factory):
-    before = frame_factory({"customer_id": [1, 1], "revenue": [10.0, 11.0]})
-    after = frame_factory({"customer_id": [1], "revenue": [12.0]})
+def _build_check(frame_factory, metric: str, paired: bool, before, after):
+    """Build a `MeanCheck`/`RateCheck` from raw `before`/`after` arrays,
+    wiring up `paired_by` (paired) or two independent dataframes (unpaired).
+    """
+    column = _column_name(metric)
+    if paired:
+        ids = list(range(len(before)))
+        before_df = frame_factory({"id": ids, column: before})
+        after_df = frame_factory({"id": ids, column: after})
+        check_ = fw.check(after_df, before=before_df, paired_by="id")
+    else:
+        before_df = frame_factory({column: before})
+        after_df = frame_factory({column: after})
+        check_ = fw.check(after_df, before=before_df)
 
-    with pytest.raises(fw.InvalidColumnDataError, match="before"):
-        fw.check(after, before=before, paired_by="customer_id")
-
-
-def test_unpaired_when_no_paired_by_given(frame_factory):
-    rng = np.random.default_rng(4)
-    before = frame_factory({"revenue": rng.normal(100.0, 5.0, size=300)})
-    after = frame_factory({"revenue": rng.normal(100.5, 5.0, size=350)})
-
-    result = (
-        fw.check(after, before=before)
-        .mean("revenue")
-        .equivalent(within=2.0, alpha=0.05, random_state=0)
-    )
-
-    assert result.paired is False
-    assert result.n_before == 300
-    assert result.n_after == 350
-    assert result.decision == "equivalent"
+    return check_.mean(column) if metric == "mean" else check_.rate(column)
 
 
-def test_missing_column_raises_key_error(frame_factory):
-    before = frame_factory({"customer_id": [1, 2], "revenue": [10.0, 20.0]})
-    after = frame_factory({"customer_id": [1, 2], "revenue": [11.0, 19.0]})
+class TestCheckConstruction:
+    def test_rejects_paired_by_without_separate_before_dataframe(self, frame_factory):
+        df = frame_factory({"customer_id": [1, 2], "score": [1.0, 2.0]})
 
-    with pytest.raises(fw.ColumnNotFoundError):
-        fw.check(after, before=before, paired_by="customer_id").mean("missing_col")
+        with pytest.raises(fw.UsageError, match="paired_by"):
+            fw.check(df, paired_by="customer_id")
 
+    def test_paired_raises_on_duplicate_keys(self, frame_factory):
+        before = frame_factory({"customer_id": [1, 1], "revenue": [10.0, 11.0]})
+        after = frame_factory({"customer_id": [1], "revenue": [12.0]})
 
-def test_random_state_makes_result_reproducible(frame_factory):
-    rng = np.random.default_rng(5)
-    ids = list(range(50))
-    before_revenue = rng.normal(100.0, 5.0, size=50)
-    after_revenue = before_revenue + rng.normal(0.5, 1.0, size=50)
+        with pytest.raises(fw.InvalidColumnDataError, match="before"):
+            fw.check(after, before=before, paired_by="customer_id")
 
-    before = frame_factory({"customer_id": ids, "revenue": before_revenue})
-    after = frame_factory({"customer_id": ids, "revenue": after_revenue})
+    def test_accepts_narwhals_frame_via_backend_helper(self, frame_factory):
+        # sanity check that check() works when given already-native frames,
+        # matching how to_narwhals_frame is used elsewhere in the codebase
+        before = to_narwhals_frame(frame_factory({"revenue": [1.0, 2.0, 3.0, 4.0]}))
+        after = to_narwhals_frame(frame_factory({"revenue": [2.0, 3.0, 4.0, 5.0]}))
 
-    check_a = fw.check(after, before=before, paired_by="customer_id").mean("revenue")
-    check_b = fw.check(after, before=before, paired_by="customer_id").mean("revenue")
-
-    result_a = check_a.equivalent(within=2.0, random_state=42)
-    result_b = check_b.equivalent(within=2.0, random_state=42)
-
-    assert result_a.ci_low == result_b.ci_low
-    assert result_a.ci_high == result_b.ci_high
-
-
-def test_mean_check_uses_analytical_path_with_zero_resamples(frame_factory):
-    before = frame_factory({"revenue": [1.0, 2.0, 3.0, 4.0]})
-    after = frame_factory({"revenue": [2.0, 3.0, 4.0, 5.0]})
-
-    result = fw.check(after, before=before).mean("revenue").equivalent(within=5.0)
-
-    assert result.n_resamples == 0
-
-
-def test_mean_check_can_opt_into_bootstrap(frame_factory):
-    before = frame_factory({"revenue": [1.0, 2.0, 3.0, 4.0, 5.0]})
-    after = frame_factory({"revenue": [2.0, 3.0, 4.0, 5.0, 6.0]})
-
-    result = (
-        fw.check(after, before=before)
-        .mean("revenue")
-        .equivalent(within=5.0, n_resamples=1000, random_state=0, method="bootstrap")
-    )
-
-    assert result.n_resamples == 1000
-    assert result.diff == pytest.approx(1.0)
-
-
-def test_mean_check_rejects_unknown_method(frame_factory):
-    before = frame_factory({"revenue": [1.0, 2.0, 3.0]})
-    after = frame_factory({"revenue": [2.0, 3.0, 4.0]})
-
-    with pytest.raises(fw.InvalidParameterError, match="Unknown inference"):
-        fw.check(after, before=before).mean("revenue").equivalent(
-            within=5.0, method="magic"
+        result = (
+            fw.check(after.to_native(), before=before.to_native())
+            .mean("revenue")
+            .equivalent(within=5.0, random_state=0)
         )
 
-
-def test_mean_check_rejects_invalid_alpha_before_computing_ci(frame_factory):
-    # alpha is validated eagerly by `InferenceConfig` as soon as
-    # `.equivalent()` is called, rather than only failing deep inside CI
-    # computation.
-    before = frame_factory({"revenue": [1.0, 2.0, 3.0]})
-    after = frame_factory({"revenue": [2.0, 3.0, 4.0]})
-
-    with pytest.raises(fw.InvalidParameterError, match="alpha"):
-        fw.check(after, before=before).mean("revenue").equivalent(within=5.0, alpha=0.6)
+        assert result.diff == pytest.approx(1.0)
 
 
-def test_mean_check_is_deterministic_regardless_of_random_state(frame_factory):
-    rng = np.random.default_rng(6)
-    ids = list(range(50))
-    before_revenue = rng.normal(100.0, 5.0, size=50)
-    after_revenue = before_revenue + rng.normal(0.5, 1.0, size=50)
+class TestColumnResolution:
+    def test_paired_aligns_on_key_and_drops_unmatched(self, frame_factory):
+        before = frame_factory(
+            {"customer_id": [1, 2, 3], "revenue": [10.0, 20.0, 30.0]}
+        )
+        after = frame_factory({"customer_id": [2, 3, 4], "revenue": [21.0, 31.0, 41.0]})
 
-    before = frame_factory({"customer_id": ids, "revenue": before_revenue})
-    after = frame_factory({"customer_id": ids, "revenue": after_revenue})
+        mean_check = fw.check(after, before=before, paired_by="customer_id").mean(
+            "revenue"
+        )
 
-    check_a = fw.check(after, before=before, paired_by="customer_id").mean("revenue")
-    check_b = fw.check(after, before=before, paired_by="customer_id").mean("revenue")
+        assert mean_check._before_values.tolist() == [20.0, 30.0]
+        assert mean_check._after_values.tolist() == [21.0, 31.0]
 
-    result_a = check_a.equivalent(within=2.0, random_state=1)
-    result_b = check_b.equivalent(within=2.0, random_state=999)
+    def test_missing_column_raises_key_error(self, frame_factory):
+        before = frame_factory({"customer_id": [1, 2], "revenue": [10.0, 20.0]})
+        after = frame_factory({"customer_id": [1, 2], "revenue": [11.0, 19.0]})
 
-    assert result_a.diff == result_b.diff
-    assert result_a.ci_low == result_b.ci_low
-    assert result_a.ci_high == result_b.ci_high
+        with pytest.raises(fw.ColumnNotFoundError):
+            fw.check(after, before=before, paired_by="customer_id").mean("missing_col")
 
+    def test_two_dataframe_unpaired_drops_nulls_independently(self, frame_factory):
+        before = frame_factory({"revenue": [10.0, None, 30.0, 40.0]})
+        after = frame_factory({"revenue": [None, 21.0, 31.0, 41.0]})
 
-def test_unpaired_equivalent_within_margin(frame_factory):
-    rng = np.random.default_rng(20)
-    before = frame_factory({"revenue": rng.normal(100.0, 5.0, size=200)})
-    after = frame_factory({"revenue": rng.normal(100.2, 5.0, size=220)})
+        mean_check = fw.check(after, before=before).mean("revenue")
 
-    result = fw.check(after, before=before).mean("revenue").equivalent(within=2.0)
+        assert mean_check._before_values.tolist() == [10.0, 30.0, 40.0]
+        assert mean_check._after_values.tolist() == [21.0, 31.0, 41.0]
 
-    assert result.decision == "equivalent"
-    assert result.paired is False
+    def test_two_dataframe_paired_drops_rows_with_null_in_either_side(
+        self, frame_factory
+    ):
+        before = frame_factory(
+            {"customer_id": [1, 2, 3, 4], "revenue": [10.0, None, 30.0, 40.0]}
+        )
+        after = frame_factory(
+            {"customer_id": [1, 2, 3, 4], "revenue": [11.0, 21.0, None, 41.0]}
+        )
 
+        mean_check = fw.check(after, before=before, paired_by="customer_id").mean(
+            "revenue"
+        )
 
-def test_unpaired_changed_beyond_margin(frame_factory):
-    rng = np.random.default_rng(21)
-    before = frame_factory({"revenue": rng.normal(100.0, 5.0, size=200)})
-    after = frame_factory({"revenue": rng.normal(110.0, 5.0, size=220)})
-
-    result = fw.check(after, before=before).mean("revenue").equivalent(within=2.0)
-
-    assert result.decision == "changed"
-
-
-def test_unpaired_inconclusive_with_small_noisy_sample(frame_factory):
-    rng = np.random.default_rng(0)
-    before = frame_factory({"revenue": rng.normal(100.0, 5.0, size=6)})
-    after = frame_factory({"revenue": rng.normal(101.0, 5.0, size=6)})
-
-    result = fw.check(after, before=before).mean("revenue").equivalent(within=2.0)
-
-    assert result.decision == "inconclusive"
-
-
-def test_accepts_narwhals_frame_via_backend_helper(frame_factory):
-    # sanity check that check() works when given already-native frames,
-    # matching how to_narwhals_frame is used elsewhere in the codebase
-    before = to_narwhals_frame(frame_factory({"revenue": [1.0, 2.0, 3.0, 4.0]}))
-    after = to_narwhals_frame(frame_factory({"revenue": [2.0, 3.0, 4.0, 5.0]}))
-
-    result = (
-        fw.check(after.to_native(), before=before.to_native())
-        .mean("revenue")
-        .equivalent(within=5.0, random_state=0)
-    )
-
-    assert result.diff == pytest.approx(1.0)
+        assert mean_check._before_values.tolist() == [10.0, 40.0]
+        assert mean_check._after_values.tolist() == [11.0, 41.0]
 
 
 class TestSameDataframeComparison:
-    def test_equivalent_within_margin(self, frame_factory):
-        rng = np.random.default_rng(10)
-        score_before = rng.normal(loc=80.0, scale=5.0, size=200)
-        score_after = score_before + rng.normal(loc=0.2, scale=0.5, size=200)
-
-        df = frame_factory({"score_before": score_before, "score_after": score_after})
-
-        result = (
-            fw.check(df)
-            .mean("score_after", before="score_before")
-            .equivalent(within=1.0, alpha=0.05, random_state=0)
-        )
-
-        assert result.decision == "equivalent"
-        assert result.paired is True
-        assert result.column == "score_after"
-        assert result.n_before == result.n_after == 200
-        result.raise_for_status()  # should not raise
-
-    def test_changed_beyond_margin(self, frame_factory):
-        rng = np.random.default_rng(11)
-        score_before = rng.normal(loc=80.0, scale=5.0, size=200)
-        score_after = score_before + rng.normal(loc=10.0, scale=0.5, size=200)
-
-        df = frame_factory({"score_before": score_before, "score_after": score_after})
-
-        result = (
-            fw.check(df)
-            .mean("score_after", before="score_before")
-            .equivalent(within=1.0, alpha=0.05, random_state=0)
-        )
-
-        assert result.decision == "changed"
-        with pytest.raises(fw.FrameworthyAssertionError):
-            result.raise_for_status()
-
     def test_rows_stay_paired_row_by_row(self, frame_factory):
         # a constant per-row shift should be recovered exactly regardless of
         # row order, proving before/after values are compared row-by-row
@@ -311,12 +197,6 @@ class TestSameDataframeComparison:
 
         with pytest.raises(fw.UsageError, match="same-dataframe"):
             fw.check(after, before=before).mean("revenue", before="revenue")
-
-    def test_rejects_paired_by_without_separate_before_dataframe(self, frame_factory):
-        df = frame_factory({"customer_id": [1, 2], "score": [1.0, 2.0]})
-
-        with pytest.raises(fw.UsageError, match="paired_by"):
-            fw.check(df, paired_by="customer_id")
 
     def test_missing_column_raises_key_error(self, frame_factory):
         df = frame_factory({"score_before": [1.0, 2.0], "score_after": [2.0, 3.0]})
@@ -355,60 +235,13 @@ class TestSameDataframeComparison:
             fw.check(df).mean("score_after", before="score_before")
 
 
-class TestRateCheck:
-    def test_paired_by_equivalent_within_margin(self, frame_factory):
-        rng = np.random.default_rng(30)
-        ids = list(range(500))
-        before_converted = (rng.random(500) < 0.30).astype(float)
-        # after mostly agrees with before, with a small amount of noise
-        flip = rng.random(500) < 0.02
-        after_converted = np.where(flip, 1 - before_converted, before_converted)
+class TestRateSpecific:
+    def test_rejects_non_binary_column(self, frame_factory):
+        before = frame_factory({"count": [0.0, 1.0, 2.0]})
+        after = frame_factory({"count": [0.0, 1.0, 1.0]})
 
-        before = frame_factory({"customer_id": ids, "converted": before_converted})
-        after = frame_factory({"customer_id": ids, "converted": after_converted})
-
-        result = (
-            fw.check(after, before=before, paired_by="customer_id")
-            .rate("converted")
-            .equivalent(within=0.05, alpha=0.05)
-        )
-
-        assert result.decision == "equivalent"
-        assert result.paired is True
-        assert result.statistic == "rate"
-        assert result.n_before == result.n_after == 500
-        result.raise_for_status()  # should not raise
-
-    def test_paired_by_changed_beyond_margin(self, frame_factory):
-        rng = np.random.default_rng(31)
-        ids = list(range(500))
-        before_converted = (rng.random(500) < 0.20).astype(float)
-        flip = rng.random(500) < 0.35
-        after_converted = np.where(flip, 1 - before_converted, before_converted)
-
-        before = frame_factory({"customer_id": ids, "converted": before_converted})
-        after = frame_factory({"customer_id": ids, "converted": after_converted})
-
-        result = (
-            fw.check(after, before=before, paired_by="customer_id")
-            .rate("converted")
-            .equivalent(within=0.005, alpha=0.05)
-        )
-
-        assert result.decision == "changed"
-        with pytest.raises(fw.FrameworthyAssertionError):
-            result.raise_for_status()
-
-    def test_unpaired_when_no_paired_by_given(self, frame_factory):
-        rng = np.random.default_rng(32)
-        before = frame_factory({"converted": (rng.random(400) < 0.30).astype(float)})
-        after = frame_factory({"converted": (rng.random(450) < 0.31).astype(float)})
-
-        result = fw.check(after, before=before).rate("converted").equivalent(within=0.1)
-
-        assert result.paired is False
-        assert result.n_before == 400
-        assert result.n_after == 450
+        with pytest.raises(fw.InvalidColumnDataError, match="binary"):
+            fw.check(after, before=before).rate("count")
 
     def test_boundary_all_zero_does_not_collapse_to_a_point(self, frame_factory):
         before = frame_factory({"converted": [0.0] * 50})
@@ -422,292 +255,284 @@ class TestRateCheck:
         assert result.ci_low != result.ci_high
         assert result.decision == "changed"
 
-    def test_same_dataframe_paired_columns(self, frame_factory):
-        rng = np.random.default_rng(33)
-        converted_before = (rng.random(300) < 0.25).astype(float)
-        flip = rng.random(300) < 0.02
-        converted_after = np.where(flip, 1 - converted_before, converted_before)
 
-        df = frame_factory(
-            {"converted_before": converted_before, "converted_after": converted_after}
+class TestEquivalent:
+    """Verdict coverage for `.equivalent()`, across both built-in metrics
+    and both pairing modes. Each case's `(before, after)` arrays are
+    constructed deterministically (see `conftest.py`) to land on the target
+    verdict -- no seed-fishing required.
+    """
+
+    @pytest.mark.parametrize("metric", ["mean", "rate"])
+    @pytest.mark.parametrize("paired", [True, False])
+    def test_equivalent_within_margin(self, frame_factory, metric, paired):
+        before, after = EQUIVALENT_ARRAYS[metric, paired]
+        result = _build_check(frame_factory, metric, paired, before, after).equivalent(
+            within=MARGIN[metric]
         )
 
-        result = (
-            fw.check(df)
-            .rate("converted_after", before="converted_before")
-            .equivalent(within=0.05)
+        assert result.decision == "equivalent"
+        assert result.passed is True
+        assert result.paired is paired
+        result.raise_for_status()  # should not raise
+
+    @pytest.mark.parametrize("metric", ["mean", "rate"])
+    @pytest.mark.parametrize("paired", [True, False])
+    def test_changed_beyond_margin(self, frame_factory, metric, paired):
+        before, after = CHANGED_ARRAYS[metric, paired]
+        result = _build_check(frame_factory, metric, paired, before, after).equivalent(
+            within=MARGIN[metric]
         )
 
-        assert result.paired is True
-        assert result.column == "converted_after"
+        assert result.decision == "changed"
+        assert result.passed is False
+        with pytest.raises(fw.FrameworthyAssertionError):
+            result.raise_for_status()
 
-    def test_rejects_non_binary_column(self, frame_factory):
-        before = frame_factory({"count": [0.0, 1.0, 2.0]})
-        after = frame_factory({"count": [0.0, 1.0, 1.0]})
-
-        with pytest.raises(fw.InvalidColumnDataError, match="binary"):
-            fw.check(after, before=before).rate("count")
-
-    def test_bootstrap_method_is_supported(self, frame_factory):
-        rng = np.random.default_rng(34)
-        before = frame_factory({"converted": (rng.random(200) < 0.3).astype(float)})
-        after = frame_factory({"converted": (rng.random(200) < 0.32).astype(float)})
-
-        result = (
-            fw.check(after, before=before)
-            .rate("converted")
-            .equivalent(
-                within=0.1, n_resamples=1000, random_state=0, method="bootstrap"
-            )
+    @pytest.mark.parametrize("metric", ["mean", "rate"])
+    @pytest.mark.parametrize("paired", [True, False])
+    def test_inconclusive_with_small_noisy_sample(self, frame_factory, metric, paired):
+        before, after = EQUIVALENCE_INCONCLUSIVE_ARRAYS[metric, paired]
+        result = _build_check(frame_factory, metric, paired, before, after).equivalent(
+            within=MARGIN[metric]
         )
 
-        assert result.n_resamples == 1000
-
-    def test_analytical_method_uses_zero_resamples(self, frame_factory):
-        before = frame_factory({"converted": [0.0, 1.0, 1.0, 0.0]})
-        after = frame_factory({"converted": [1.0, 1.0, 1.0, 0.0]})
-
-        result = fw.check(after, before=before).rate("converted").equivalent(within=0.5)
-
-        assert result.n_resamples == 0
-
-    def test_random_state_makes_bootstrap_result_reproducible(self, frame_factory):
-        rng = np.random.default_rng(35)
-        before = frame_factory({"converted": (rng.random(100) < 0.3).astype(float)})
-        after = frame_factory({"converted": (rng.random(100) < 0.32).astype(float)})
-
-        check_a = fw.check(after, before=before).rate("converted")
-        check_b = fw.check(after, before=before).rate("converted")
-
-        result_a = check_a.equivalent(within=0.1, random_state=42, method="bootstrap")
-        result_b = check_b.equivalent(within=0.1, random_state=42, method="bootstrap")
-
-        assert result_a.ci_low == result_b.ci_low
-        assert result_a.ci_high == result_b.ci_high
-
-    def test_missing_column_raises_key_error(self, frame_factory):
-        before = frame_factory({"converted": [0.0, 1.0]})
-        after = frame_factory({"converted": [0.0, 1.0]})
-
-        with pytest.raises(fw.ColumnNotFoundError):
-            fw.check(after, before=before).rate("missing_col")
-
-    def test_rejects_unknown_method(self, frame_factory):
-        before = frame_factory({"converted": [0.0, 1.0, 1.0]})
-        after = frame_factory({"converted": [1.0, 1.0, 0.0]})
-
-        with pytest.raises(fw.InvalidParameterError, match="Unknown inference"):
-            fw.check(after, before=before).rate("converted").equivalent(
-                within=0.5, method="magic"
-            )
+        assert result.decision == "inconclusive"
+        with pytest.warns(UserWarning):
+            result.raise_for_status()  # should not raise, only warn
 
 
 class TestChangeGreaterThan:
-    def test_mean_passed_when_lower_bound_above_threshold(self, frame_factory):
-        rng = np.random.default_rng(40)
-        ids = list(range(200))
-        before_revenue = rng.normal(loc=100.0, scale=5.0, size=200)
-        after_revenue = before_revenue + rng.normal(loc=0.2, scale=0.5, size=200)
+    """Verdict coverage for `.change_greater_than()` (ruling out a drop),
+    across both built-in metrics. Uses paired data, mirroring the
+    "same customers, before vs. after" scenario this claim targets.
+    """
 
-        before = frame_factory({"customer_id": ids, "revenue": before_revenue})
-        after = frame_factory({"customer_id": ids, "revenue": after_revenue})
-
-        result = (
-            fw.check(after, before=before, paired_by="customer_id")
-            .mean("revenue")
-            .change_greater_than(-2.0, alpha=0.05, random_state=0)
-        )
+    @pytest.mark.parametrize("metric", ["mean", "rate"])
+    def test_passed_when_lower_bound_above_threshold(self, frame_factory, metric):
+        before, after = GREATER_THAN_PASSED_ARRAYS[metric]
+        result = _build_check(
+            frame_factory, metric, True, before, after
+        ).change_greater_than(GREATER_THAN_THRESHOLD[metric])
 
         assert result.decision == "passed"
         assert result.passed is True
         assert result.direction == "greater_than"
-        assert result.threshold == -2.0
+        assert result.threshold == GREATER_THAN_THRESHOLD[metric]
         result.raise_for_status()  # should not raise
 
-    def test_mean_failed_when_upper_bound_below_threshold(self, frame_factory):
-        rng = np.random.default_rng(41)
-        ids = list(range(200))
-        before_revenue = rng.normal(loc=100.0, scale=5.0, size=200)
-        after_revenue = before_revenue - rng.normal(loc=10.0, scale=0.5, size=200)
-
-        before = frame_factory({"customer_id": ids, "revenue": before_revenue})
-        after = frame_factory({"customer_id": ids, "revenue": after_revenue})
-
-        result = (
-            fw.check(after, before=before, paired_by="customer_id")
-            .mean("revenue")
-            .change_greater_than(-2.0, alpha=0.05, random_state=0)
-        )
+    @pytest.mark.parametrize("metric", ["mean", "rate"])
+    def test_failed_when_upper_bound_below_threshold(self, frame_factory, metric):
+        before, after = GREATER_THAN_FAILED_ARRAYS[metric]
+        result = _build_check(
+            frame_factory, metric, True, before, after
+        ).change_greater_than(GREATER_THAN_THRESHOLD[metric])
 
         assert result.decision == "failed"
         assert result.passed is False
         with pytest.raises(fw.FrameworthyAssertionError):
             result.raise_for_status()
 
-    def test_mean_inconclusive_with_small_noisy_sample(self, frame_factory):
-        rng = np.random.default_rng(0)
-        ids = list(range(6))
-        before_revenue = rng.normal(loc=100.0, scale=5.0, size=6)
-        after_revenue = before_revenue + rng.normal(loc=0.0, scale=3.0, size=6)
-
-        before = frame_factory({"customer_id": ids, "revenue": before_revenue})
-        after = frame_factory({"customer_id": ids, "revenue": after_revenue})
-
-        result = (
-            fw.check(after, before=before, paired_by="customer_id")
-            .mean("revenue")
-            .change_greater_than(-2.0, alpha=0.05, random_state=0)
-        )
+    @pytest.mark.parametrize("metric", ["mean", "rate"])
+    def test_inconclusive_with_small_noisy_sample(self, frame_factory, metric):
+        before, after = GREATER_THAN_INCONCLUSIVE_ARRAYS[metric]
+        result = _build_check(
+            frame_factory, metric, True, before, after
+        ).change_greater_than(GREATER_THAN_THRESHOLD[metric])
 
         assert result.decision == "inconclusive"
         with pytest.warns(UserWarning):
             result.raise_for_status()  # should not raise, only warn
 
-    def test_rate_passed_rules_out_conversion_drop(self, frame_factory):
-        rng = np.random.default_rng(43)
-        ids = list(range(500))
-        before_converted = (rng.random(500) < 0.30).astype(float)
-        flip = rng.random(500) < 0.01
-        after_converted = np.where(flip, 1 - before_converted, before_converted)
-
-        before = frame_factory({"customer_id": ids, "converted": before_converted})
-        after = frame_factory({"customer_id": ids, "converted": after_converted})
-
-        result = (
-            fw.check(after, before=before, paired_by="customer_id")
-            .rate("converted")
-            .change_greater_than(-0.05, alpha=0.05)
-        )
-
-        assert result.decision == "passed"
-        assert result.paired is True
-        assert result.statistic == "rate"
-        result.raise_for_status()  # should not raise
-
-    def test_rate_failed_confirms_conversion_drop(self, frame_factory):
-        rng = np.random.default_rng(44)
-        ids = list(range(500))
-        before_converted = (rng.random(500) < 0.40).astype(float)
-        after_converted = (rng.random(500) < 0.10).astype(float)
-
-        before = frame_factory({"customer_id": ids, "converted": before_converted})
-        after = frame_factory({"customer_id": ids, "converted": after_converted})
-
-        result = (
-            fw.check(after, before=before, paired_by="customer_id")
-            .rate("converted")
-            .change_greater_than(-0.005, alpha=0.05)
-        )
-
-        assert result.decision == "failed"
-        with pytest.raises(fw.FrameworthyAssertionError):
-            result.raise_for_status()
-
 
 class TestChangeLessThan:
-    def test_mean_passed_when_upper_bound_below_threshold(self, frame_factory):
-        rng = np.random.default_rng(50)
-        before = frame_factory({"latency_ms": rng.normal(100.0, 5.0, size=300)})
-        after = frame_factory({"latency_ms": rng.normal(102.0, 5.0, size=300)})
+    """Verdict coverage for `.change_less_than()` (ruling out a rise),
+    across both built-in metrics. Uses unpaired data, mirroring the
+    "independent before/after samples" scenario this claim targets.
+    """
 
-        result = (
-            fw.check(after, before=before)
-            .mean("latency_ms")
-            .change_less_than(20.0, alpha=0.05)
-        )
+    @pytest.mark.parametrize("metric", ["mean", "rate"])
+    def test_passed_when_upper_bound_below_threshold(self, frame_factory, metric):
+        before, after = LESS_THAN_PASSED_ARRAYS[metric]
+        result = _build_check(
+            frame_factory, metric, False, before, after
+        ).change_less_than(LESS_THAN_THRESHOLD[metric])
 
         assert result.decision == "passed"
         assert result.passed is True
         assert result.direction == "less_than"
-        assert result.threshold == 20.0
+        assert result.threshold == LESS_THAN_THRESHOLD[metric]
         result.raise_for_status()  # should not raise
 
-    def test_mean_failed_when_lower_bound_above_threshold(self, frame_factory):
-        rng = np.random.default_rng(51)
-        before = frame_factory({"latency_ms": rng.normal(100.0, 5.0, size=300)})
-        after = frame_factory({"latency_ms": rng.normal(140.0, 5.0, size=300)})
-
-        result = (
-            fw.check(after, before=before)
-            .mean("latency_ms")
-            .change_less_than(20.0, alpha=0.05)
-        )
+    @pytest.mark.parametrize("metric", ["mean", "rate"])
+    def test_failed_when_lower_bound_above_threshold(self, frame_factory, metric):
+        before, after = LESS_THAN_FAILED_ARRAYS[metric]
+        result = _build_check(
+            frame_factory, metric, False, before, after
+        ).change_less_than(LESS_THAN_THRESHOLD[metric])
 
         assert result.decision == "failed"
         with pytest.raises(fw.FrameworthyAssertionError):
             result.raise_for_status()
 
-    def test_mean_inconclusive_with_small_noisy_sample(self, frame_factory):
-        rng = np.random.default_rng(52)
-        before = frame_factory({"latency_ms": rng.normal(100.0, 5.0, size=6)})
-        after = frame_factory({"latency_ms": rng.normal(115.0, 8.0, size=6)})
-
-        result = (
-            fw.check(after, before=before)
-            .mean("latency_ms")
-            .change_less_than(20.0, alpha=0.05)
-        )
+    @pytest.mark.parametrize("metric", ["mean", "rate"])
+    def test_inconclusive_with_small_noisy_sample(self, frame_factory, metric):
+        before, after = LESS_THAN_INCONCLUSIVE_ARRAYS[metric]
+        result = _build_check(
+            frame_factory, metric, False, before, after
+        ).change_less_than(LESS_THAN_THRESHOLD[metric])
 
         assert result.decision == "inconclusive"
         with pytest.warns(UserWarning):
             result.raise_for_status()  # should not raise, only warn
 
-    def test_rate_passed_rules_out_error_rate_increase(self, frame_factory):
-        rng = np.random.default_rng(53)
-        before = frame_factory({"errored": (rng.random(500) < 0.02).astype(float)})
-        after = frame_factory({"errored": (rng.random(500) < 0.025).astype(float)})
 
-        result = fw.check(after, before=before).rate("errored").change_less_than(0.05)
+class TestInferenceOptions:
+    """`alpha`/`n_resamples`/`random_state`/`method` behavior, which is
+    shared plumbing (`InferenceConfig`) rather than metric-specific, so one
+    parametrized pass over `mean`/`rate` is enough -- no need to repeat
+    these for every claim method too.
+    """
 
-        assert result.decision == "passed"
-        assert result.statistic == "rate"
-        result.raise_for_status()  # should not raise
+    @pytest.mark.parametrize("metric", ["mean", "rate"])
+    def test_analytical_method_uses_zero_resamples(self, frame_factory, metric):
+        before, after = EQUIVALENT_ARRAYS[metric, True]
+        result = _build_check(frame_factory, metric, True, before, after).equivalent(
+            within=MARGIN[metric]
+        )
 
-    def test_bootstrap_method_is_supported(self, frame_factory):
-        before = frame_factory({"latency_ms": [100.0, 101.0, 99.0, 102.0, 98.0]})
-        after = frame_factory({"latency_ms": [101.0, 102.0, 100.0, 103.0, 99.0]})
+        assert result.n_resamples == 0
 
-        result = (
-            fw.check(after, before=before)
-            .mean("latency_ms")
-            .change_less_than(
-                20.0, n_resamples=1000, random_state=0, method="bootstrap"
-            )
+    @pytest.mark.parametrize("metric", ["mean", "rate"])
+    def test_bootstrap_method_is_supported(self, frame_factory, metric):
+        before, after = EQUIVALENT_ARRAYS[metric, True]
+        result = _build_check(frame_factory, metric, True, before, after).equivalent(
+            within=MARGIN[metric], n_resamples=1000, random_state=0, method="bootstrap"
         )
 
         assert result.n_resamples == 1000
 
-    def test_rejects_unknown_method(self, frame_factory):
-        before = frame_factory({"latency_ms": [100.0, 101.0, 99.0]})
-        after = frame_factory({"latency_ms": [101.0, 102.0, 100.0]})
+    @pytest.mark.parametrize("metric", ["mean", "rate"])
+    def test_random_state_makes_bootstrap_result_reproducible(
+        self, frame_factory, metric
+    ):
+        before, after = EQUIVALENT_ARRAYS[metric, True]
+        check_a = _build_check(frame_factory, metric, True, before, after)
+        check_b = _build_check(frame_factory, metric, True, before, after)
+
+        result_a = check_a.equivalent(
+            within=MARGIN[metric], random_state=42, method="bootstrap"
+        )
+        result_b = check_b.equivalent(
+            within=MARGIN[metric], random_state=42, method="bootstrap"
+        )
+
+        assert result_a.ci_low == result_b.ci_low
+        assert result_a.ci_high == result_b.ci_high
+
+    @pytest.mark.parametrize("metric", ["mean", "rate"])
+    def test_random_state_has_no_effect_on_analytical_path(self, frame_factory, metric):
+        before, after = EQUIVALENT_ARRAYS[metric, True]
+        check_a = _build_check(frame_factory, metric, True, before, after)
+        check_b = _build_check(frame_factory, metric, True, before, after)
+
+        result_a = check_a.equivalent(within=MARGIN[metric], random_state=1)
+        result_b = check_b.equivalent(within=MARGIN[metric], random_state=999)
+
+        assert result_a.diff == result_b.diff
+        assert result_a.ci_low == result_b.ci_low
+        assert result_a.ci_high == result_b.ci_high
+
+    @pytest.mark.parametrize(
+        "claim",
+        [
+            lambda check_: check_.equivalent(within=5.0, method="magic"),
+            lambda check_: check_.change_greater_than(-5.0, method="magic"),
+            lambda check_: check_.change_less_than(5.0, method="magic"),
+        ],
+        ids=["equivalent", "change_greater_than", "change_less_than"],
+    )
+    @pytest.mark.parametrize("metric", ["mean", "rate"])
+    def test_rejects_unknown_method(self, frame_factory, metric, claim):
+        before, after = EQUIVALENT_ARRAYS[metric, True]
+        check_ = _build_check(frame_factory, metric, True, before, after)
 
         with pytest.raises(fw.InvalidParameterError, match="Unknown inference"):
-            fw.check(after, before=before).mean("latency_ms").change_less_than(
-                20.0, method="magic"
-            )
+            claim(check_)
+
+    def test_rejects_invalid_alpha_before_computing_ci(self, frame_factory):
+        # alpha is validated eagerly by `InferenceConfig` as soon as
+        # `.equivalent()` is called, rather than only failing deep inside CI
+        # computation.
+        before, after = EQUIVALENT_ARRAYS["mean", True]
+        check_ = _build_check(frame_factory, "mean", True, before, after)
+
+        with pytest.raises(fw.InvalidParameterError, match="alpha"):
+            check_.equivalent(within=5.0, alpha=0.6)
 
 
-class TestTwoDataframeNullHandling:
-    def test_unpaired_drops_nulls_independently(self, frame_factory):
-        before = frame_factory({"revenue": [10.0, None, 30.0, 40.0]})
-        after = frame_factory({"revenue": [None, 21.0, 31.0, 41.0]})
+class TestMetricConformance:
+    """Every built-in metric's checks share the same contract, enforced by
+    `MetricCheck`/`ComparisonResult`: a passing verdict is truthy, doesn't
+    raise or warn; a failing verdict raises `FrameworthyAssertionError`; an
+    inconclusive verdict only warns. Parametrizing this across metrics means
+    a future metric gets this contract test for free by adding one entry.
+    """
 
-        mean_check = fw.check(after, before=before).mean("revenue")
+    @pytest.mark.parametrize("metric", ["mean", "rate"])
+    def test_equivalent_result_type_and_contract(self, frame_factory, metric):
+        before_pass, after_pass = EQUIVALENT_ARRAYS[metric, True]
+        before_fail, after_fail = CHANGED_ARRAYS[metric, True]
 
-        assert mean_check._before_values.tolist() == [10.0, 30.0, 40.0]
-        assert mean_check._after_values.tolist() == [21.0, 31.0, 41.0]
+        check_pass = _build_check(frame_factory, metric, True, before_pass, after_pass)
+        check_fail = _build_check(frame_factory, metric, True, before_fail, after_fail)
 
-    def test_paired_drops_rows_with_null_in_either_side(self, frame_factory):
-        before = frame_factory(
-            {"customer_id": [1, 2, 3, 4], "revenue": [10.0, None, 30.0, 40.0]}
+        result_pass = check_pass.equivalent(within=MARGIN[metric])
+        result_fail = check_fail.equivalent(within=MARGIN[metric])
+
+        assert isinstance(result_pass, fw.EquivalenceResult)
+        assert result_pass.passed is True
+        assert result_fail.passed is False
+        with pytest.raises(fw.FrameworthyAssertionError):
+            result_fail.raise_for_status()
+
+    @pytest.mark.parametrize("metric", ["mean", "rate"])
+    @pytest.mark.parametrize(
+        "claim_name, passed_arrays, failed_arrays, threshold",
+        [
+            (
+                "change_greater_than",
+                GREATER_THAN_PASSED_ARRAYS,
+                GREATER_THAN_FAILED_ARRAYS,
+                GREATER_THAN_THRESHOLD,
+            ),
+            (
+                "change_less_than",
+                LESS_THAN_PASSED_ARRAYS,
+                LESS_THAN_FAILED_ARRAYS,
+                LESS_THAN_THRESHOLD,
+            ),
+        ],
+    )
+    def test_change_result_type_and_contract(
+        self, frame_factory, metric, claim_name, passed_arrays, failed_arrays, threshold
+    ):
+        paired = claim_name == "change_greater_than"
+        before_pass, after_pass = passed_arrays[metric]
+        before_fail, after_fail = failed_arrays[metric]
+
+        check_pass = _build_check(
+            frame_factory, metric, paired, before_pass, after_pass
         )
-        after = frame_factory(
-            {"customer_id": [1, 2, 3, 4], "revenue": [11.0, 21.0, None, 41.0]}
+        check_fail = _build_check(
+            frame_factory, metric, paired, before_fail, after_fail
         )
 
-        mean_check = fw.check(after, before=before, paired_by="customer_id").mean(
-            "revenue"
-        )
+        result_pass = getattr(check_pass, claim_name)(threshold[metric])
+        result_fail = getattr(check_fail, claim_name)(threshold[metric])
 
-        assert mean_check._before_values.tolist() == [10.0, 40.0]
-        assert mean_check._after_values.tolist() == [11.0, 41.0]
+        assert isinstance(result_pass, fw.ChangeResult)
+        assert result_pass.passed is True
+        assert result_fail.passed is False
+        with pytest.raises(fw.FrameworthyAssertionError):
+            result_fail.raise_for_status()
