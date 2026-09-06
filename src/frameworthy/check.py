@@ -19,12 +19,12 @@ from ._pairing import _normalize_keys, assert_unique_keys
 from ._stats import classify_equivalence, mean_diff_ci, rate_diff_ci
 from .results import EquivalenceResult
 
-DiffCiFn = Callable[..., tuple[float, float, float]]
+DiffFunc = Callable[..., tuple[float, float, float]]
 
 
 def _equivalence_result(
     *,
-    diff_ci_fn: DiffCiFn,
+    diff_func: DiffFunc,
     statistic: str,
     column: str,
     paired: bool,
@@ -37,12 +37,12 @@ def _equivalence_result(
     method: InferenceMethod,
 ) -> EquivalenceResult:
     """Shared implementation behind `MeanCheck.equivalent()` and
-    `RateCheck.equivalent()`: run `diff_ci_fn` (either `mean_diff_ci` or
+    `RateCheck.equivalent()`: run `diff_func` (either `mean_diff_ci` or
     `rate_diff_ci`, which share a signature), classify the resulting CI,
     and package everything into an `EquivalenceResult`.
     """
     rng = np.random.default_rng(random_state)
-    diff, ci_low, ci_high = diff_ci_fn(
+    diff, ci_low, ci_high = diff_func(
         before_values,
         after_values,
         paired=paired,
@@ -113,7 +113,7 @@ class MeanCheck:
         analytical path.
         """
         return _equivalence_result(
-            diff_ci_fn=mean_diff_ci,
+            diff_func=mean_diff_ci,
             statistic="mean",
             column=self._column,
             paired=self._paired,
@@ -180,7 +180,7 @@ class RateCheck:
         produce a degenerate, zero-width bootstrap interval.
         """
         return _equivalence_result(
-            diff_ci_fn=rate_diff_ci,
+            diff_func=rate_diff_ci,
             statistic="rate",
             column=self._column,
             paired=self._paired,
