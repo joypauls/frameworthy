@@ -16,8 +16,14 @@ from ._constants import (
     InferenceMethod,
 )
 from ._pairing import _normalize_keys, assert_unique_keys
-from ._stats import classify_equivalence, mean_diff_ci, rate_diff_ci
-from .results import EquivalenceResult
+from ._stats import (
+    Direction,
+    classify_change_bound,
+    classify_equivalence,
+    mean_diff_ci,
+    rate_diff_ci,
+)
+from .results import ChangeResult, EquivalenceResult
 
 DiffFunc = Callable[..., tuple[float, float, float]]
 
@@ -65,6 +71,63 @@ def _equivalence_result(
         ci_high=ci_high,
         alpha=alpha,
         within=within,
+        n_before=len(before_values),
+        n_after=len(after_values),
+        n_resamples=n_resamples if method == "bootstrap" else 0,
+    )
+
+
+def _change_result(
+    *,
+    diff_func: DiffFunc,
+    statistic: str,
+    column: str,
+    paired: bool,
+    before_values: np.ndarray,
+    after_values: np.ndarray,
+    threshold: float,
+    direction: Direction,
+    alpha: float,
+    n_resamples: int,
+    random_state: int | np.random.Generator | None,
+    method: InferenceMethod,
+) -> ChangeResult:
+    """Shared implementation behind `MeanCheck.change_greater_than()`,
+    `MeanCheck.change_less_than()`, and their `RateCheck` counterparts: run
+    `diff_func` (either `mean_diff_ci` or `rate_diff_ci`), classify the
+    resulting CI against `threshold` in the given `direction`, and package
+    everything into a `ChangeResult`.
+
+    The same `(1 - 2 * alpha)` two-sided CI used by equivalence checks is
+    reused here: each of its endpoints is individually a valid `(1 - alpha)`
+    one-sided confidence bound, which is exactly what a one-sided directional
+    claim needs.
+    """
+    rng = np.random.default_rng(random_state)
+    diff, ci_low, ci_high = diff_func(
+        before_values,
+        after_values,
+        paired=paired,
+        alpha=alpha,
+        n_resamples=n_resamples,
+        rng=rng,
+        method=method,
+    )
+    decision = classify_change_bound(ci_low, ci_high, threshold, direction=direction)
+
+    return ChangeResult(
+        decision=decision,
+        column=column,
+        statistic=statistic,
+        paired=paired,
+        before_mean=float(before_values.mean()),
+        after_mean=float(after_values.mean()),
+        diff=diff,
+        ci_low=ci_low,
+        ci_high=ci_high,
+        threshold=threshold,
+        direction=direction,
+        alpha=alpha,
         n_before=len(before_values),
         n_after=len(after_values),
         n_resamples=n_resamples if method == "bootstrap" else 0,
@@ -120,6 +183,78 @@ class MeanCheck:
             before_values=self._before_values,
             after_values=self._after_values,
             within=within,
+            alpha=alpha,
+            n_resamples=n_resamples,
+            random_state=random_state,
+            method=method,
+        )
+
+    def change_greater_than(
+        self,
+        threshold: float,
+        alpha: float = DEFAULT_ALPHA,
+        n_resamples: int = DEFAULT_N_RESAMPLES,
+        random_state: int | np.random.Generator | None = None,
+        method: InferenceMethod = DEFAULT_INFERENCE_METHOD,
+    ) -> ChangeResult:
+        """Rule out that the mean difference (after - before) is `threshold`
+        or smaller -- e.g. ruling out an unacceptable drop when `threshold`
+        is negative.
+
+        Builds a `(1 - alpha)` one-sided lower confidence bound for the mean
+        difference and checks it against `threshold`: `passed` if the bound
+        is above `threshold`, `failed` if the data instead confirms the
+        difference is at or below `threshold`, `inconclusive` if the
+        available data can't establish either.
+
+        Uses the same `mean_diff_ci` machinery (and `method`/`n_resamples`/
+        `random_state` semantics) as `.equivalent()`.
+        """
+        return _change_result(
+            diff_func=mean_diff_ci,
+            statistic="mean",
+            column=self._column,
+            paired=self._paired,
+            before_values=self._before_values,
+            after_values=self._after_values,
+            threshold=threshold,
+            direction="greater_than",
+            alpha=alpha,
+            n_resamples=n_resamples,
+            random_state=random_state,
+            method=method,
+        )
+
+    def change_less_than(
+        self,
+        threshold: float,
+        alpha: float = DEFAULT_ALPHA,
+        n_resamples: int = DEFAULT_N_RESAMPLES,
+        random_state: int | np.random.Generator | None = None,
+        method: InferenceMethod = DEFAULT_INFERENCE_METHOD,
+    ) -> ChangeResult:
+        """Rule out that the mean difference (after - before) is `threshold`
+        or larger -- e.g. ruling out an unacceptable increase in a metric
+        like latency.
+
+        Builds a `(1 - alpha)` one-sided upper confidence bound for the mean
+        difference and checks it against `threshold`: `passed` if the bound
+        is below `threshold`, `failed` if the data instead confirms the
+        difference is at or above `threshold`, `inconclusive` if the
+        available data can't establish either.
+
+        Uses the same `mean_diff_ci` machinery (and `method`/`n_resamples`/
+        `random_state` semantics) as `.equivalent()`.
+        """
+        return _change_result(
+            diff_func=mean_diff_ci,
+            statistic="mean",
+            column=self._column,
+            paired=self._paired,
+            before_values=self._before_values,
+            after_values=self._after_values,
+            threshold=threshold,
+            direction="less_than",
             alpha=alpha,
             n_resamples=n_resamples,
             random_state=random_state,
@@ -187,6 +322,79 @@ class RateCheck:
             before_values=self._before_values,
             after_values=self._after_values,
             within=within,
+            alpha=alpha,
+            n_resamples=n_resamples,
+            random_state=random_state,
+            method=method,
+        )
+
+    def change_greater_than(
+        self,
+        threshold: float,
+        alpha: float = DEFAULT_ALPHA,
+        n_resamples: int = DEFAULT_N_RESAMPLES,
+        random_state: int | np.random.Generator | None = None,
+        method: InferenceMethod = DEFAULT_INFERENCE_METHOD,
+    ) -> ChangeResult:
+        """Rule out that the rate difference (after - before) is `threshold`
+        or smaller -- e.g. ruling out an unacceptable drop in conversion
+        when `threshold` is a small negative proportion like `-0.005`.
+
+        Builds a `(1 - alpha)` one-sided lower confidence bound for the rate
+        difference and checks it against `threshold`: `passed` if the bound
+        is above `threshold`, `failed` if the data instead confirms the
+        difference is at or below `threshold`, `inconclusive` if the
+        available data can't establish either. `threshold` is a plain
+        proportion, e.g. `threshold=-0.005` means half a percentage point.
+
+        Uses the same `rate_diff_ci` machinery (and `method`/`n_resamples`/
+        `random_state` semantics) as `.equivalent()`.
+        """
+        return _change_result(
+            diff_func=rate_diff_ci,
+            statistic="rate",
+            column=self._column,
+            paired=self._paired,
+            before_values=self._before_values,
+            after_values=self._after_values,
+            threshold=threshold,
+            direction="greater_than",
+            alpha=alpha,
+            n_resamples=n_resamples,
+            random_state=random_state,
+            method=method,
+        )
+
+    def change_less_than(
+        self,
+        threshold: float,
+        alpha: float = DEFAULT_ALPHA,
+        n_resamples: int = DEFAULT_N_RESAMPLES,
+        random_state: int | np.random.Generator | None = None,
+        method: InferenceMethod = DEFAULT_INFERENCE_METHOD,
+    ) -> ChangeResult:
+        """Rule out that the rate difference (after - before) is `threshold`
+        or larger -- e.g. ruling out an unacceptable rise in an error rate.
+
+        Builds a `(1 - alpha)` one-sided upper confidence bound for the rate
+        difference and checks it against `threshold`: `passed` if the bound
+        is below `threshold`, `failed` if the data instead confirms the
+        difference is at or above `threshold`, `inconclusive` if the
+        available data can't establish either. `threshold` is a plain
+        proportion, e.g. `threshold=0.005` means half a percentage point.
+
+        Uses the same `rate_diff_ci` machinery (and `method`/`n_resamples`/
+        `random_state` semantics) as `.equivalent()`.
+        """
+        return _change_result(
+            diff_func=rate_diff_ci,
+            statistic="rate",
+            column=self._column,
+            paired=self._paired,
+            before_values=self._before_values,
+            after_values=self._after_values,
+            threshold=threshold,
+            direction="less_than",
             alpha=alpha,
             n_resamples=n_resamples,
             random_state=random_state,

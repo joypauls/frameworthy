@@ -491,6 +491,191 @@ class TestRateCheck:
             )
 
 
+class TestChangeGreaterThan:
+    def test_mean_passed_when_lower_bound_above_threshold(self, frame_factory):
+        rng = np.random.default_rng(40)
+        ids = list(range(200))
+        before_revenue = rng.normal(loc=100.0, scale=5.0, size=200)
+        after_revenue = before_revenue + rng.normal(loc=0.2, scale=0.5, size=200)
+
+        before = frame_factory({"customer_id": ids, "revenue": before_revenue})
+        after = frame_factory({"customer_id": ids, "revenue": after_revenue})
+
+        result = (
+            fw.check(after, before=before, paired_by="customer_id")
+            .mean("revenue")
+            .change_greater_than(-2.0, alpha=0.05, random_state=0)
+        )
+
+        assert result.decision == "passed"
+        assert result.passed is True
+        assert result.direction == "greater_than"
+        assert result.threshold == -2.0
+        result.raise_for_status()  # should not raise
+
+    def test_mean_failed_when_upper_bound_below_threshold(self, frame_factory):
+        rng = np.random.default_rng(41)
+        ids = list(range(200))
+        before_revenue = rng.normal(loc=100.0, scale=5.0, size=200)
+        after_revenue = before_revenue - rng.normal(loc=10.0, scale=0.5, size=200)
+
+        before = frame_factory({"customer_id": ids, "revenue": before_revenue})
+        after = frame_factory({"customer_id": ids, "revenue": after_revenue})
+
+        result = (
+            fw.check(after, before=before, paired_by="customer_id")
+            .mean("revenue")
+            .change_greater_than(-2.0, alpha=0.05, random_state=0)
+        )
+
+        assert result.decision == "failed"
+        assert result.passed is False
+        with pytest.raises(fw.FrameworthyAssertionError):
+            result.raise_for_status()
+
+    def test_mean_inconclusive_with_small_noisy_sample(self, frame_factory):
+        rng = np.random.default_rng(0)
+        ids = list(range(6))
+        before_revenue = rng.normal(loc=100.0, scale=5.0, size=6)
+        after_revenue = before_revenue + rng.normal(loc=0.0, scale=3.0, size=6)
+
+        before = frame_factory({"customer_id": ids, "revenue": before_revenue})
+        after = frame_factory({"customer_id": ids, "revenue": after_revenue})
+
+        result = (
+            fw.check(after, before=before, paired_by="customer_id")
+            .mean("revenue")
+            .change_greater_than(-2.0, alpha=0.05, random_state=0)
+        )
+
+        assert result.decision == "inconclusive"
+        with pytest.warns(UserWarning):
+            result.raise_for_status()  # should not raise, only warn
+
+    def test_rate_passed_rules_out_conversion_drop(self, frame_factory):
+        rng = np.random.default_rng(43)
+        ids = list(range(500))
+        before_converted = (rng.random(500) < 0.30).astype(float)
+        flip = rng.random(500) < 0.01
+        after_converted = np.where(flip, 1 - before_converted, before_converted)
+
+        before = frame_factory({"customer_id": ids, "converted": before_converted})
+        after = frame_factory({"customer_id": ids, "converted": after_converted})
+
+        result = (
+            fw.check(after, before=before, paired_by="customer_id")
+            .rate("converted")
+            .change_greater_than(-0.05, alpha=0.05)
+        )
+
+        assert result.decision == "passed"
+        assert result.paired is True
+        assert result.statistic == "rate"
+        result.raise_for_status()  # should not raise
+
+    def test_rate_failed_confirms_conversion_drop(self, frame_factory):
+        rng = np.random.default_rng(44)
+        ids = list(range(500))
+        before_converted = (rng.random(500) < 0.40).astype(float)
+        after_converted = (rng.random(500) < 0.10).astype(float)
+
+        before = frame_factory({"customer_id": ids, "converted": before_converted})
+        after = frame_factory({"customer_id": ids, "converted": after_converted})
+
+        result = (
+            fw.check(after, before=before, paired_by="customer_id")
+            .rate("converted")
+            .change_greater_than(-0.005, alpha=0.05)
+        )
+
+        assert result.decision == "failed"
+        with pytest.raises(fw.FrameworthyAssertionError):
+            result.raise_for_status()
+
+
+class TestChangeLessThan:
+    def test_mean_passed_when_upper_bound_below_threshold(self, frame_factory):
+        rng = np.random.default_rng(50)
+        before = frame_factory({"latency_ms": rng.normal(100.0, 5.0, size=300)})
+        after = frame_factory({"latency_ms": rng.normal(102.0, 5.0, size=300)})
+
+        result = (
+            fw.check(after, before=before)
+            .mean("latency_ms")
+            .change_less_than(20.0, alpha=0.05)
+        )
+
+        assert result.decision == "passed"
+        assert result.passed is True
+        assert result.direction == "less_than"
+        assert result.threshold == 20.0
+        result.raise_for_status()  # should not raise
+
+    def test_mean_failed_when_lower_bound_above_threshold(self, frame_factory):
+        rng = np.random.default_rng(51)
+        before = frame_factory({"latency_ms": rng.normal(100.0, 5.0, size=300)})
+        after = frame_factory({"latency_ms": rng.normal(140.0, 5.0, size=300)})
+
+        result = (
+            fw.check(after, before=before)
+            .mean("latency_ms")
+            .change_less_than(20.0, alpha=0.05)
+        )
+
+        assert result.decision == "failed"
+        with pytest.raises(fw.FrameworthyAssertionError):
+            result.raise_for_status()
+
+    def test_mean_inconclusive_with_small_noisy_sample(self, frame_factory):
+        rng = np.random.default_rng(52)
+        before = frame_factory({"latency_ms": rng.normal(100.0, 5.0, size=6)})
+        after = frame_factory({"latency_ms": rng.normal(115.0, 8.0, size=6)})
+
+        result = (
+            fw.check(after, before=before)
+            .mean("latency_ms")
+            .change_less_than(20.0, alpha=0.05)
+        )
+
+        assert result.decision == "inconclusive"
+        with pytest.warns(UserWarning):
+            result.raise_for_status()  # should not raise, only warn
+
+    def test_rate_passed_rules_out_error_rate_increase(self, frame_factory):
+        rng = np.random.default_rng(53)
+        before = frame_factory({"errored": (rng.random(500) < 0.02).astype(float)})
+        after = frame_factory({"errored": (rng.random(500) < 0.025).astype(float)})
+
+        result = fw.check(after, before=before).rate("errored").change_less_than(0.05)
+
+        assert result.decision == "passed"
+        assert result.statistic == "rate"
+        result.raise_for_status()  # should not raise
+
+    def test_bootstrap_method_is_supported(self, frame_factory):
+        before = frame_factory({"latency_ms": [100.0, 101.0, 99.0, 102.0, 98.0]})
+        after = frame_factory({"latency_ms": [101.0, 102.0, 100.0, 103.0, 99.0]})
+
+        result = (
+            fw.check(after, before=before)
+            .mean("latency_ms")
+            .change_less_than(
+                20.0, n_resamples=1000, random_state=0, method="bootstrap"
+            )
+        )
+
+        assert result.n_resamples == 1000
+
+    def test_rejects_unknown_method(self, frame_factory):
+        before = frame_factory({"latency_ms": [100.0, 101.0, 99.0]})
+        after = frame_factory({"latency_ms": [101.0, 102.0, 100.0]})
+
+        with pytest.raises(ValueError, match="Unknown inference"):
+            fw.check(after, before=before).mean("latency_ms").change_less_than(
+                20.0, method="magic"
+            )
+
+
 class TestTwoDataframeNullHandling:
     def test_unpaired_drops_nulls_independently(self, frame_factory):
         before = frame_factory({"revenue": [10.0, None, 30.0, 40.0]})
