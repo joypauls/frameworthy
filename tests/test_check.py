@@ -344,6 +344,144 @@ class TestSameDataframeComparison:
             fw.check(df).mean("score_after", before="score_before")
 
 
+class TestRateCheck:
+    def test_paired_by_equivalent_within_margin(self, frame_factory):
+        rng = np.random.default_rng(30)
+        ids = list(range(500))
+        before_converted = (rng.random(500) < 0.30).astype(float)
+        # after mostly agrees with before, with a small amount of noise
+        flip = rng.random(500) < 0.02
+        after_converted = np.where(flip, 1 - before_converted, before_converted)
+
+        before = frame_factory({"customer_id": ids, "converted": before_converted})
+        after = frame_factory({"customer_id": ids, "converted": after_converted})
+
+        result = (
+            fw.check(after, before=before, paired_by="customer_id")
+            .rate("converted")
+            .equivalent(within=0.05, alpha=0.05)
+        )
+
+        assert result.decision == "equivalent"
+        assert result.paired is True
+        assert result.statistic == "rate"
+        assert result.n_before == result.n_after == 500
+        result.raise_for_status()  # should not raise
+
+    def test_paired_by_changed_beyond_margin(self, frame_factory):
+        rng = np.random.default_rng(31)
+        ids = list(range(500))
+        before_converted = (rng.random(500) < 0.20).astype(float)
+        flip = rng.random(500) < 0.35
+        after_converted = np.where(flip, 1 - before_converted, before_converted)
+
+        before = frame_factory({"customer_id": ids, "converted": before_converted})
+        after = frame_factory({"customer_id": ids, "converted": after_converted})
+
+        result = (
+            fw.check(after, before=before, paired_by="customer_id")
+            .rate("converted")
+            .equivalent(within=0.005, alpha=0.05)
+        )
+
+        assert result.decision == "changed"
+        with pytest.raises(fw.FrameworthyAssertionError):
+            result.raise_for_status()
+
+    def test_unpaired_when_no_paired_by_given(self, frame_factory):
+        rng = np.random.default_rng(32)
+        before = frame_factory({"converted": (rng.random(400) < 0.30).astype(float)})
+        after = frame_factory({"converted": (rng.random(450) < 0.31).astype(float)})
+
+        result = fw.check(after, before=before).rate("converted").equivalent(within=0.1)
+
+        assert result.paired is False
+        assert result.n_before == 400
+        assert result.n_after == 450
+
+    def test_boundary_all_zero_does_not_collapse_to_a_point(self, frame_factory):
+        before = frame_factory({"converted": [0.0] * 50})
+        after = frame_factory({"converted": [0.0] * 5 + [1.0] * 45})
+
+        result = (
+            fw.check(after, before=before).rate("converted").equivalent(within=0.05)
+        )
+
+        # a boundary observed rate of 0 shouldn't produce a zero-width CI
+        assert result.ci_low != result.ci_high
+        assert result.decision == "changed"
+
+    def test_same_dataframe_paired_columns(self, frame_factory):
+        rng = np.random.default_rng(33)
+        converted_before = (rng.random(300) < 0.25).astype(float)
+        flip = rng.random(300) < 0.02
+        converted_after = np.where(flip, 1 - converted_before, converted_before)
+
+        df = frame_factory(
+            {"converted_before": converted_before, "converted_after": converted_after}
+        )
+
+        result = (
+            fw.check(df)
+            .rate("converted_after", before="converted_before")
+            .equivalent(within=0.05)
+        )
+
+        assert result.paired is True
+        assert result.column == "converted_after"
+
+    def test_rejects_non_binary_column(self, frame_factory):
+        before = frame_factory({"count": [0.0, 1.0, 2.0]})
+        after = frame_factory({"count": [0.0, 1.0, 1.0]})
+
+        with pytest.raises(ValueError, match="binary"):
+            fw.check(after, before=before).rate("count")
+
+    def test_bootstrap_method_is_supported(self, frame_factory):
+        rng = np.random.default_rng(34)
+        before = frame_factory({"converted": (rng.random(200) < 0.3).astype(float)})
+        after = frame_factory({"converted": (rng.random(200) < 0.32).astype(float)})
+
+        result = (
+            fw.check(after, before=before)
+            .rate("converted")
+            .equivalent(
+                within=0.1, n_resamples=1000, random_state=0, method="bootstrap"
+            )
+        )
+
+        assert result.n_resamples == 1000
+
+    def test_analytical_method_uses_zero_resamples(self, frame_factory):
+        before = frame_factory({"converted": [0.0, 1.0, 1.0, 0.0]})
+        after = frame_factory({"converted": [1.0, 1.0, 1.0, 0.0]})
+
+        result = fw.check(after, before=before).rate("converted").equivalent(within=0.5)
+
+        assert result.n_resamples == 0
+
+    def test_random_state_makes_bootstrap_result_reproducible(self, frame_factory):
+        rng = np.random.default_rng(35)
+        before = frame_factory({"converted": (rng.random(100) < 0.3).astype(float)})
+        after = frame_factory({"converted": (rng.random(100) < 0.32).astype(float)})
+
+        check_a = fw.check(after, before=before).rate("converted")
+        check_b = fw.check(after, before=before).rate("converted")
+
+        result_a = check_a.equivalent(within=0.1, random_state=42, method="bootstrap")
+        result_b = check_b.equivalent(within=0.1, random_state=42, method="bootstrap")
+
+        assert result_a.ci_low == result_b.ci_low
+        assert result_a.ci_high == result_b.ci_high
+
+    def test_missing_column_raises_key_error(self, frame_factory):
+        before = frame_factory({"converted": [0.0, 1.0]})
+        after = frame_factory({"converted": [0.0, 1.0]})
+
+        with pytest.raises(KeyError):
+            fw.check(after, before=before).rate("missing_col")
+
+
 class TestTwoDataframeNullHandling:
     def test_unpaired_drops_nulls_independently(self, frame_factory):
         before = frame_factory({"revenue": [10.0, None, 30.0, 40.0]})
