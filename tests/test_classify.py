@@ -1,6 +1,6 @@
 import pytest
 
-from frameworthy._decisions import classify_change_bound, classify_equivalence
+from frameworthy._classify import classify_change_bound, classify_equivalence
 from frameworthy._errors import InvalidParameterError
 
 

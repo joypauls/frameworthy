@@ -2,7 +2,7 @@
 
 Split out from `_stats.py`: this module owns interval *computation*
 (Wilson/bootstrap/analytical mean and rate estimators, plus the
-`mean_diff_ci`/`rate_diff_ci` dispatchers); `_decisions.py` owns turning a
+`mean_diff_ci`/`rate_diff_ci` dispatchers); `_classify.py` owns turning a
 computed interval into a `Decision`.
 """
 
