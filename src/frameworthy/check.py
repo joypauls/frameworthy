@@ -15,6 +15,7 @@ from ._constants import (
     DEFAULT_N_RESAMPLES,
     InferenceMethod,
 )
+from ._errors import UsageError
 from ._pairing import _normalize_keys, assert_unique_keys
 from ._stats import (
     Direction,
@@ -418,7 +419,7 @@ class Check:
         self._before = to_narwhals_frame(before) if before is not None else None
 
         if self._before is None and paired_by is not None:
-            raise ValueError(
+            raise UsageError(
                 "`paired_by` requires a separate `before` dataframe passed to "
                 "`check()`. For same-dataframe comparisons, pass "
                 "`before=<column name>` to `.mean()` instead."
@@ -438,13 +439,13 @@ class Check:
         """
         if self._before is None:
             if before is None:
-                raise ValueError(
+                raise UsageError(
                     f"`check()` was given a single dataframe; `.{metric}()` "
                     "requires `before=<column name>` to compare two columns "
                     "in that dataframe."
                 )
             if before == column:
-                raise ValueError(
+                raise UsageError(
                     "`before` must name a different column than the one being "
                     f"compared, got `{column}` for both."
                 )
@@ -455,7 +456,7 @@ class Check:
             return before_values, after_values, True
 
         if before is not None:
-            raise ValueError(
+            raise UsageError(
                 f"`before=` on `.{metric}()` is only used for same-dataframe "
                 "comparisons; pass a separate `before` dataframe to `check()` "
                 "instead."

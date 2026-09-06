@@ -4,6 +4,11 @@ import numpy as np
 from scipy import stats
 
 from ._constants import DEFAULT_INFERENCE_METHOD, InferenceMethod
+from ._errors import (
+    InsufficientDataError,
+    InvalidColumnDataError,
+    InvalidParameterError,
+)
 from .decision import Decision
 
 Direction = Literal["greater_than", "less_than"]
@@ -11,13 +16,15 @@ Direction = Literal["greater_than", "less_than"]
 
 def _validate_alpha(alpha: float) -> None:
     if not 0 < alpha < 0.5:
-        raise ValueError(f"`alpha` must be in (0, 0.5), got {alpha}.")
+        raise InvalidParameterError(f"`alpha` must be in (0, 0.5), got {alpha}.")
 
 
 def _validate_bootstrap_args(alpha: float, n_resamples: int) -> None:
     _validate_alpha(alpha)
     if n_resamples < 1:
-        raise ValueError(f"`n_resamples` must be positive, got {n_resamples}.")
+        raise InvalidParameterError(
+            f"`n_resamples` must be positive, got {n_resamples}."
+        )
 
 
 def wilson_interval(count: int, n: int, alpha: float) -> tuple[float, float]:
@@ -32,9 +39,9 @@ def wilson_interval(count: int, n: int, alpha: float) -> tuple[float, float]:
     """
     _validate_alpha(alpha)
     if n < 1:
-        raise ValueError(f"`n` must be positive, got {n}.")
+        raise InvalidParameterError(f"`n` must be positive, got {n}.")
     if not 0 <= count <= n:
-        raise ValueError(f"`count` must be in [0, {n}], got {count}.")
+        raise InvalidParameterError(f"`count` must be in [0, {n}], got {count}.")
 
     ci = stats.binomtest(count, n).proportion_ci(
         confidence_level=1 - 2 * alpha, method="wilson"
@@ -50,12 +57,14 @@ def _bootstrap_paired_diffs(
     rng: np.random.Generator,
 ) -> tuple[float, np.ndarray]:
     if len(before) != len(after):
-        raise ValueError(
+        raise InvalidColumnDataError(
             "Paired bootstrap requires `before` and `after` to have the "
             f"same length, got {len(before)} and {len(after)}."
         )
     if len(before) < 2:
-        raise ValueError("At least 2 paired observations are required to bootstrap.")
+        raise InsufficientDataError(
+            "At least 2 paired observations are required to bootstrap."
+        )
 
     diffs = after - before
     observed = float(diffs.mean())
@@ -73,7 +82,9 @@ def _bootstrap_unpaired_diffs(
     rng: np.random.Generator,
 ) -> tuple[float, np.ndarray]:
     if len(before) < 2 or len(after) < 2:
-        raise ValueError("At least 2 observations per side are required to bootstrap.")
+        raise InsufficientDataError(
+            "At least 2 observations per side are required to bootstrap."
+        )
 
     observed = float(after.mean() - before.mean())
     before_idx = rng.integers(0, len(before), size=(n_resamples, len(before)))
@@ -140,12 +151,12 @@ def paired_mean_diff_ci(
     interval is the `(1 - 2 * alpha)` confidence interval.
     """
     if len(before) != len(after):
-        raise ValueError(
+        raise InvalidColumnDataError(
             "Paired comparison requires `before` and `after` to have the "
             f"same length, got {len(before)} and {len(after)}."
         )
     if len(before) < 2:
-        raise ValueError(
+        raise InsufficientDataError(
             "At least 2 paired observations are required for an analytical "
             "confidence interval."
         )
@@ -166,7 +177,7 @@ def independent_mean_diff_ci(
     confidence interval.
     """
     if len(before) < 2 or len(after) < 2:
-        raise ValueError(
+        raise InsufficientDataError(
             "At least 2 observations per side are required for an analytical "
             "confidence interval."
         )
@@ -241,7 +252,7 @@ def mean_diff_ci(
             n_resamples=n_resamples,
             rng=rng,
         )
-    raise ValueError(f"Unknown inference `method`: {method!r}.")
+    raise InvalidParameterError(f"Unknown inference `method`: {method!r}.")
 
 
 def independent_rate_diff_ci(
@@ -264,7 +275,7 @@ def independent_rate_diff_ci(
     """
     _validate_alpha(alpha)
     if len(before) < 2 or len(after) < 2:
-        raise ValueError(
+        raise InsufficientDataError(
             "At least 2 observations per side are required for an analytical "
             "confidence interval."
         )
@@ -332,12 +343,12 @@ def paired_rate_diff_ci(
     """
     _validate_alpha(alpha)
     if len(before) != len(after):
-        raise ValueError(
+        raise InvalidColumnDataError(
             "Paired comparison requires `before` and `after` to have the "
             f"same length, got {len(before)} and {len(after)}."
         )
     if len(before) < 2:
-        raise ValueError(
+        raise InsufficientDataError(
             "At least 2 paired observations are required for an analytical "
             "confidence interval."
         )
@@ -425,7 +436,7 @@ def rate_diff_ci(
             n_resamples=n_resamples,
             rng=rng,
         )
-    raise ValueError(f"Unknown inference `method`: {method!r}.")
+    raise InvalidParameterError(f"Unknown inference `method`: {method!r}.")
 
 
 def classify_equivalence(ci_low: float, ci_high: float, within: float) -> Decision:
@@ -438,7 +449,7 @@ def classify_equivalence(ci_low: float, ci_high: float, within: float) -> Decisi
     * `inconclusive`: the CI straddles a margin boundary.
     """
     if within <= 0:
-        raise ValueError(f"`within` must be positive, got {within}.")
+        raise InvalidParameterError(f"`within` must be positive, got {within}.")
 
     if -within <= ci_low and ci_high <= within:
         return Decision.EQUIVALENT
@@ -477,4 +488,4 @@ def classify_change_bound(
         if ci_low > threshold:
             return Decision.FAILED
         return Decision.INCONCLUSIVE
-    raise ValueError(f"Unknown `direction`: {direction!r}.")
+    raise InvalidParameterError(f"Unknown `direction`: {direction!r}.")
