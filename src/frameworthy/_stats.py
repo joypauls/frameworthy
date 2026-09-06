@@ -16,6 +16,27 @@ def _validate_bootstrap_args(alpha: float, n_resamples: int) -> None:
         raise ValueError(f"`n_resamples` must be positive, got {n_resamples}.")
 
 
+def wilson_interval(count: int, n: int, alpha: float) -> tuple[float, float]:
+    """Wilson score confidence interval for a single binomial proportion.
+
+    `alpha` is interpreted the same way as elsewhere in this module: the
+    returned interval is `(1 - 2 * alpha)` two-sided-equivalent, i.e. it's
+    passed to scipy as `confidence_level = 1 - 2 * alpha`.
+
+    Returns `(low, high)`.
+    """
+    _validate_alpha(alpha)
+    if n < 1:
+        raise ValueError(f"`n` must be positive, got {n}.")
+    if not 0 <= count <= n:
+        raise ValueError(f"`count` must be in [0, {n}], got {count}.")
+
+    ci = stats.binomtest(count, n).proportion_ci(
+        confidence_level=1 - 2 * alpha, method="wilson"
+    )
+    return float(ci.low), float(ci.high)
+
+
 def _bootstrap_paired_diffs(
     before: np.ndarray,
     after: np.ndarray,

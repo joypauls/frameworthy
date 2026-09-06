@@ -7,6 +7,7 @@ from frameworthy._stats import (
     bootstrap_mean_diff_ci,
     classify_equivalence,
     mean_diff_ci,
+    wilson_interval,
 )
 
 
@@ -389,3 +390,54 @@ class TestClassifyEquivalence:
     def test_rejects_non_positive_within(self):
         with pytest.raises(ValueError, match="within"):
             classify_equivalence(-1.0, 1.0, within=0.0)
+
+
+class TestWilsonInterval:
+    def test_matches_scipy_binomtest_wilson_ci(self):
+        # alpha=0.05 here is one-sided, matching this module's convention of
+        # a `(1 - 2 * alpha)` two-sided-equivalent interval, i.e. a 90% CI.
+        low, high = wilson_interval(8, 20, alpha=0.05)
+
+        ref = scipy_stats.binomtest(8, 20).proportion_ci(
+            confidence_level=0.90, method="wilson"
+        )
+
+        assert low == pytest.approx(ref.low)
+        assert high == pytest.approx(ref.high)
+
+    def test_does_not_collapse_at_zero_count(self):
+        low, high = wilson_interval(0, 50, alpha=0.05)
+
+        assert low == pytest.approx(0.0)
+        assert high > 0.0
+
+    def test_does_not_collapse_at_full_count(self):
+        low, high = wilson_interval(50, 50, alpha=0.05)
+
+        assert low < 1.0
+        assert high == pytest.approx(1.0)
+
+    def test_interval_widens_as_alpha_shrinks(self):
+        narrow_low, narrow_high = wilson_interval(10, 40, alpha=0.1)
+        wide_low, wide_high = wilson_interval(10, 40, alpha=0.01)
+
+        assert wide_low < narrow_low
+        assert wide_high > narrow_high
+
+    def test_center_is_close_to_observed_proportion_for_large_n(self):
+        low, high = wilson_interval(500, 1000, alpha=0.05)
+
+        assert low < 0.5 < high
+        assert high - 0.5 == pytest.approx(0.5 - low, abs=1e-9)
+
+    def test_rejects_invalid_alpha(self):
+        with pytest.raises(ValueError, match="alpha"):
+            wilson_interval(5, 10, alpha=0.6)
+
+    def test_rejects_non_positive_n(self):
+        with pytest.raises(ValueError, match="`n`"):
+            wilson_interval(0, 0, alpha=0.05)
+
+    def test_rejects_count_out_of_range(self):
+        with pytest.raises(ValueError, match="`count`"):
+            wilson_interval(11, 10, alpha=0.05)

@@ -2,7 +2,7 @@ import { defineConfig } from "vitepress"
 
 export default defineConfig({
   title: "frameworthy",
-  description: "Uncertainty-aware regression testing for data and metrics.",
+  description: "Lightweight statistical validation library for dataframes and metric changes.",
 
   base: "/frameworthy/",
 
