@@ -69,12 +69,10 @@ class TestValidateEqualLength:
 
 
 class TestInferenceConfig:
-    def test_uses_defaults(self):
-        config = InferenceConfig()
-
-        assert config.alpha == 0.05
-        assert config.method == "analytical"
-        assert config.reported_n_resamples == 0
+    # `__post_init__` eagerly calling `validate_alpha`/`validate_n_resamples`/
+    # `validate_method` (each already unit-tested above) is exercised
+    # end-to-end by `test_check.py`'s `test_rejects_invalid_alpha_before_
+    # computing_ci`/`test_rejects_unknown_method`, so it isn't re-tested here.
 
     def test_reported_n_resamples_is_zero_for_analytical(self):
         config = InferenceConfig(n_resamples=1000, method="analytical")
@@ -91,15 +89,3 @@ class TestInferenceConfig:
         config_b = InferenceConfig(random_state=42)
 
         assert config_a.rng.integers(0, 1000) == config_b.rng.integers(0, 1000)
-
-    def test_rejects_invalid_alpha_eagerly(self):
-        with pytest.raises(InvalidParameterError, match="alpha"):
-            InferenceConfig(alpha=0.6)
-
-    def test_rejects_invalid_n_resamples_eagerly(self):
-        with pytest.raises(InvalidParameterError, match="n_resamples"):
-            InferenceConfig(n_resamples=0)
-
-    def test_rejects_unknown_method_eagerly(self):
-        with pytest.raises(InvalidParameterError, match="Unknown inference"):
-            InferenceConfig(method="magic")

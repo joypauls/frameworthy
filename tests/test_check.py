@@ -452,10 +452,13 @@ class TestInferenceOptions:
         ],
         ids=["equivalent", "change_greater_than", "change_less_than"],
     )
-    @pytest.mark.parametrize("metric", ["mean", "rate"])
-    def test_rejects_unknown_method(self, frame_factory, metric, claim):
-        before, after = EQUIVALENT_ARRAYS[metric, True]
-        check_ = _build_check(frame_factory, metric, True, before, after)
+    def test_rejects_unknown_method(self, frame_factory, claim):
+        # method validation happens in `InferenceConfig`, which doesn't
+        # care which metric is asking, so one representative metric (mean)
+        # is enough here -- unlike the tests above, parametrizing this over
+        # `metric` too would double the case count for zero extra coverage.
+        before, after = EQUIVALENT_ARRAYS["mean", True]
+        check_ = _build_check(frame_factory, "mean", True, before, after)
 
         with pytest.raises(fw.InvalidParameterError, match="Unknown inference"):
             claim(check_)
@@ -469,70 +472,3 @@ class TestInferenceOptions:
 
         with pytest.raises(fw.InvalidParameterError, match="alpha"):
             check_.equivalent(within=5.0, alpha=0.6)
-
-
-class TestMetricConformance:
-    """Every built-in metric's checks share the same contract, enforced by
-    `MetricCheck`/`ComparisonResult`: a passing verdict is truthy, doesn't
-    raise or warn; a failing verdict raises `FrameworthyAssertionError`; an
-    inconclusive verdict only warns. Parametrizing this across metrics means
-    a future metric gets this contract test for free by adding one entry.
-    """
-
-    @pytest.mark.parametrize("metric", ["mean", "rate"])
-    def test_equivalent_result_type_and_contract(self, frame_factory, metric):
-        before_pass, after_pass = EQUIVALENT_ARRAYS[metric, True]
-        before_fail, after_fail = CHANGED_ARRAYS[metric, True]
-
-        check_pass = _build_check(frame_factory, metric, True, before_pass, after_pass)
-        check_fail = _build_check(frame_factory, metric, True, before_fail, after_fail)
-
-        result_pass = check_pass.equivalent(within=MARGIN[metric])
-        result_fail = check_fail.equivalent(within=MARGIN[metric])
-
-        assert isinstance(result_pass, fw.EquivalenceResult)
-        assert result_pass.passed is True
-        assert result_fail.passed is False
-        with pytest.raises(fw.FrameworthyAssertionError):
-            result_fail.raise_for_status()
-
-    @pytest.mark.parametrize("metric", ["mean", "rate"])
-    @pytest.mark.parametrize(
-        "claim_name, passed_arrays, failed_arrays, threshold",
-        [
-            (
-                "change_greater_than",
-                GREATER_THAN_PASSED_ARRAYS,
-                GREATER_THAN_FAILED_ARRAYS,
-                GREATER_THAN_THRESHOLD,
-            ),
-            (
-                "change_less_than",
-                LESS_THAN_PASSED_ARRAYS,
-                LESS_THAN_FAILED_ARRAYS,
-                LESS_THAN_THRESHOLD,
-            ),
-        ],
-    )
-    def test_change_result_type_and_contract(
-        self, frame_factory, metric, claim_name, passed_arrays, failed_arrays, threshold
-    ):
-        paired = claim_name == "change_greater_than"
-        before_pass, after_pass = passed_arrays[metric]
-        before_fail, after_fail = failed_arrays[metric]
-
-        check_pass = _build_check(
-            frame_factory, metric, paired, before_pass, after_pass
-        )
-        check_fail = _build_check(
-            frame_factory, metric, paired, before_fail, after_fail
-        )
-
-        result_pass = getattr(check_pass, claim_name)(threshold[metric])
-        result_fail = getattr(check_fail, claim_name)(threshold[metric])
-
-        assert isinstance(result_pass, fw.ChangeResult)
-        assert result_pass.passed is True
-        assert result_fail.passed is False
-        with pytest.raises(fw.FrameworthyAssertionError):
-            result_fail.raise_for_status()

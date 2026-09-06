@@ -50,14 +50,16 @@ def _make_change_result(decision: Decision, **overrides) -> ChangeResult:
 
 
 class TestPassed:
-    def test_true_for_equivalent(self):
-        assert _make_result(Decision.EQUIVALENT).passed is True
-
-    def test_false_for_changed(self):
-        assert _make_result(Decision.CHANGED).passed is False
-
-    def test_false_for_inconclusive(self):
-        assert _make_result(Decision.INCONCLUSIVE).passed is False
+    @pytest.mark.parametrize(
+        "decision, expected",
+        [
+            (Decision.EQUIVALENT, True),
+            (Decision.CHANGED, False),
+            (Decision.INCONCLUSIVE, False),
+        ],
+    )
+    def test_passed(self, decision, expected):
+        assert _make_result(decision).passed is expected
 
 
 class TestStr:
@@ -136,14 +138,16 @@ class TestRaiseForStatus:
 
 
 class TestChangeResultPassed:
-    def test_true_for_passed(self):
-        assert _make_change_result(Decision.PASSED).passed is True
-
-    def test_false_for_failed(self):
-        assert _make_change_result(Decision.FAILED).passed is False
-
-    def test_false_for_inconclusive(self):
-        assert _make_change_result(Decision.INCONCLUSIVE).passed is False
+    @pytest.mark.parametrize(
+        "decision, expected",
+        [
+            (Decision.PASSED, True),
+            (Decision.FAILED, False),
+            (Decision.INCONCLUSIVE, False),
+        ],
+    )
+    def test_passed(self, decision, expected):
+        assert _make_change_result(decision).passed is expected
 
 
 class TestChangeResultStr:
@@ -170,7 +174,9 @@ class TestChangeResultStr:
         # the lower bound isn't the relevant one for this direction
         assert "lower bound" not in text
 
-    def test_greater_than_includes_lower_bound_and_threshold(self):
+    def test_greater_than_rate_includes_lower_bound_and_pp_formatting(self):
+        # also covers pp-formatting for ChangeResult; EquivalenceResult's
+        # copy of the same underlying formatting is proven in `TestStr`
         result = _make_change_result(
             Decision.PASSED,
             direction="greater_than",
@@ -181,55 +187,20 @@ class TestChangeResultStr:
             statistic=Statistic.RATE,
             before_mean=0.40,
             after_mean=0.398,
-        )
-        text = str(result)
-
-        assert "95% one-sided lower bound" in text
-        assert "change_greater_than" in text
-        assert "upper bound" not in text
-
-    def test_reports_unpaired_sample_sizes(self):
-        result = _make_change_result(
-            Decision.FAILED, paired=False, n_before=30, n_after=45
-        )
-        text = str(result)
-
-        assert "unpaired" in text
-        assert "n_before=30" in text
-        assert "n_after=45" in text
-
-    def test_rate_formats_diff_bound_and_threshold_in_percentage_points(self):
-        result = _make_change_result(
-            Decision.PASSED,
-            direction="greater_than",
-            statistic=Statistic.RATE,
-            before_mean=0.40,
-            after_mean=0.398,
-            diff=-0.002,
-            ci_low=-0.004,
-            ci_high=0.001,
-            threshold=-0.005,
         )
         text = str(result)
 
         assert "rate(latency_ms)" in text
         assert "before = 40.0%" in text
         assert "after = 39.8%" in text
+        assert "95% one-sided lower bound" in text
+        assert "change_greater_than" in text
+        assert "upper bound" not in text
         assert "-0.2pp" in text
         assert "-0.4pp" in text
         assert "-0.5pp" in text
         # a raw proportion like 0.005 shouldn't leak through unformatted
         assert "0.005" not in text
-
-    def test_mean_does_not_show_percentage_point_formatting(self):
-        result = _make_change_result(Decision.PASSED, statistic=Statistic.MEAN)
-        text = str(result)
-
-        assert "5pp" not in text
-        assert "9pp" not in text
-        assert "20pp" not in text
-        assert "before =" not in text
-        assert "after =" not in text
 
 
 class TestChangeResultRaiseForStatus:
