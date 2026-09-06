@@ -1,6 +1,8 @@
+import numpy as np
 import pytest
 
 from frameworthy._arrays import (
+    assert_binary_values,
     assert_column_exists,
     assert_equal_pairs,
     assert_min_count,
@@ -95,3 +97,21 @@ def test_values_from_two_frames_raises_when_too_few_usable_values(frame_factory)
 
     with pytest.raises(ValueError, match="At least 2"):
         values_from_two_frames(before, after, "value", None)
+
+
+def test_assert_binary_values_accepts_zero_one_floats():
+    assert_binary_values(np.array([0.0, 1.0, 1.0, 0.0]), "df")
+
+
+def test_assert_binary_values_accepts_booleans_cast_to_float():
+    assert_binary_values(np.asarray([True, False, True], dtype=float), "df")
+
+
+def test_assert_binary_values_rejects_other_numeric_values():
+    with pytest.raises(ValueError, match="binary"):
+        assert_binary_values(np.array([0.0, 1.0, 2.0]), "df")
+
+
+def test_assert_binary_values_rejects_fractional_values():
+    with pytest.raises(ValueError, match="binary"):
+        assert_binary_values(np.array([0.0, 0.5, 1.0]), "df")

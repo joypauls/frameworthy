@@ -21,6 +21,23 @@ def assert_min_count(n: int, min_count: int, label: str) -> None:
         )
 
 
+def assert_binary_values(values: np.ndarray, label: str) -> None:
+    """Validate that every value is exactly `0.0` or `1.0`.
+
+    Used by `.rate()` to catch accidental use on a non-binary column (e.g.
+    counts or categorical codes) with a clear error, rather than silently
+    treating an arbitrary numeric column's mean as if it were a rate.
+    Booleans are fine since they're cast to `0.0`/`1.0` beforehand.
+    """
+    is_binary = np.isin(values, [0.0, 1.0])
+    if not np.all(is_binary):
+        bad_value = values[~is_binary][0]
+        raise ValueError(
+            f"`.rate()` requires {label} values to be binary (0/1 or "
+            f"boolean), got a non-binary value: {bad_value!r}."
+        )
+
+
 def assert_equal_pairs(
     before_values: np.ndarray, after_values: np.ndarray, label: str
 ) -> None:
