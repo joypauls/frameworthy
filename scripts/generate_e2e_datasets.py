@@ -34,22 +34,22 @@ def main():
             "bernoulli": bernoulli_before,
         }
     )
-    df_after_changed = pd.DataFrame(
-        {
-            "normal": normal_after_changed,
-            "bernoulli": bernoulli_after_changed,
-        }
-    )
     df_after_unchanged = pd.DataFrame(
         {
             "normal": normal_after_unchanged,
             "bernoulli": bernoulli_after_unchanged,
         }
     )
+    df_after_changed = pd.DataFrame(
+        {
+            "normal": normal_after_changed,
+            "bernoulli": bernoulli_after_changed,
+        }
+    )
 
     df_before.to_csv("tests/integration/data/before.csv", index=False)
-    df_after_changed.to_csv("tests/integration/data/after_changed.csv", index=False)
     df_after_unchanged.to_csv("tests/integration/data/after_unchanged.csv", index=False)
+    df_after_changed.to_csv("tests/integration/data/after_changed.csv", index=False)
 
 
 if __name__ == "__main__":
