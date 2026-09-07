@@ -1,7 +1,7 @@
 [project]
 name = "frameworthy"
 version = "0.1.2"
-description = "A lightweight testing library for dataframes and analytical transformations."
+description = "Lightweight statistical validation library for dataframes and metric changes."
 readme = "README.md"
 authors = [
     { name = "joypauls", email = "joypaulsen3@gmail.com" }
@@ -17,6 +17,8 @@ classifiers = [
 
 dependencies = [
     "narwhals>=2.25.0",
+    "numpy>=2.4.6",
+    "scipy>=1.17.1",
 ]
 
 [build-system]
@@ -27,7 +29,6 @@ build-backend = "uv_build"
 dev = [
     "pandas>=3.0.5",
     "polars>=1.44.0",
-    "pyright>=1.1.411",
     "pytest>=9.1.1",
     "pytest-cov>=7.1.0",
     "ruff>=0.16.4",
