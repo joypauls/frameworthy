@@ -33,7 +33,7 @@ def test_same_df_paired_check_is_equivalent_for_small_shift(test_df):
 
     assert result.decision == "equivalent"
     assert result.n_before == result.n_after == len(test_df)
-    result.raise_for_status()  # should not raise
+    result.raise_for_status()
 
 
 def test_two_dataframe_unpaired_check_detects_species_difference(test_df):
@@ -80,7 +80,7 @@ def test_same_df_paired_rate_check_is_equivalent_for_small_change(test_df):
     assert result.paired is True
     assert result.statistic == "rate"
     assert result.n_before == result.n_after == len(test_df)
-    result.raise_for_status()  # should not raise
+    result.raise_for_status()
 
 
 def test_two_dataframe_unpaired_rate_check_detects_species_difference(test_df):
