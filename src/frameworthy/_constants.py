@@ -25,6 +25,7 @@ class Statistic(str, Enum):
 
     MEAN = "mean"
     RATE = "rate"
+    MEDIAN = "median"
 
     @property
     def is_proportion(self) -> bool:
