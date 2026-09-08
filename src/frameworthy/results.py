@@ -1,6 +1,5 @@
 import warnings
 from dataclasses import dataclass
-from typing import ClassVar
 
 from ._constants import Direction, Statistic
 from ._errors import FrameworthyAssertionError
@@ -14,7 +13,7 @@ class ComparisonResult:
 
     Not meant to be constructed or subclassed outside this module: it
     holds the fields, `pairing`/`levels` formatting, and `passed`/
-    `raise_for_status` logic common to both kinds of check, and defers to
+    `assert_passed` logic common to both kinds of check, and defers to
     `_claim_summary()` for the part of `__str__` that's specific to each
     (a two-sided CI + margin for equivalence, a one-sided bound + threshold
     for a directional change).
@@ -34,15 +33,10 @@ class ComparisonResult:
     n_after: int
     n_resamples: int
 
-    # declared by each subclass: which `Decision` means "evidence supports
-    # the claim" vs. "evidence supports the opposite of the claim"
-    _pass_decision: ClassVar[Decision]
-    _fail_decision: ClassVar[Decision]
-
     @property
     def passed(self) -> bool:
         """Whether the evidence supports the claim being tested."""
-        return self.decision == self._pass_decision
+        return self.decision == Decision.PASSED
 
     def _claim_summary(self) -> str:
         """The claim-specific middle portion of `__str__` (including its
@@ -67,11 +61,11 @@ class ComparisonResult:
             f"alpha = {self.alpha:g}, {pairing}"
         )
 
-    def raise_for_status(self) -> None:
+    def assert_passed(self) -> None:
         """Raise if the evidence supports the opposite of the claim being
         tested; warn (but don't raise) if the evidence is inconclusive.
         """
-        if self.decision == self._fail_decision:
+        if self.decision == Decision.FAILED:
             raise FrameworthyAssertionError(str(self))
         if self.decision == Decision.INCONCLUSIVE:
             warnings.warn(str(self), stacklevel=2)
@@ -86,9 +80,6 @@ class EquivalenceResult(ComparisonResult):
     """
 
     within: float
-
-    _pass_decision: ClassVar[Decision] = Decision.EQUIVALENT
-    _fail_decision: ClassVar[Decision] = Decision.CHANGED
 
     def _claim_summary(self) -> str:
         ci_pct = round((1 - 2 * self.alpha) * 100)
@@ -110,9 +101,6 @@ class ChangeResult(ComparisonResult):
 
     threshold: float
     direction: Direction
-
-    _pass_decision: ClassVar[Decision] = Decision.PASSED
-    _fail_decision: ClassVar[Decision] = Decision.FAILED
 
     def _claim_summary(self) -> str:
         # each CI endpoint is individually a (1 - alpha) one-sided bound, so

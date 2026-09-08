@@ -253,7 +253,7 @@ class TestRateSpecific:
 
         # a boundary observed rate of 0 shouldn't produce a zero-width CI
         assert result.ci_low != result.ci_high
-        assert result.decision == "changed"
+        assert result.decision == "failed"
 
 
 class TestEquivalent:
@@ -271,10 +271,10 @@ class TestEquivalent:
             within=MARGIN[metric]
         )
 
-        assert result.decision == "equivalent"
+        assert result.decision == "passed"
         assert result.passed is True
         assert result.paired is paired
-        result.raise_for_status()  # should not raise
+        result.assert_passed()  # should not raise
 
     @pytest.mark.parametrize("metric", ["mean", "rate"])
     @pytest.mark.parametrize("paired", [True, False])
@@ -284,10 +284,10 @@ class TestEquivalent:
             within=MARGIN[metric]
         )
 
-        assert result.decision == "changed"
+        assert result.decision == "failed"
         assert result.passed is False
         with pytest.raises(fw.FrameworthyAssertionError):
-            result.raise_for_status()
+            result.assert_passed()
 
     @pytest.mark.parametrize("metric", ["mean", "rate"])
     @pytest.mark.parametrize("paired", [True, False])
@@ -299,7 +299,7 @@ class TestEquivalent:
 
         assert result.decision == "inconclusive"
         with pytest.warns(UserWarning):
-            result.raise_for_status()  # should not raise, only warn
+            result.assert_passed()  # should not raise, only warn
 
 
 class TestChangeGreaterThan:
@@ -319,7 +319,7 @@ class TestChangeGreaterThan:
         assert result.passed is True
         assert result.direction == "greater_than"
         assert result.threshold == GREATER_THAN_THRESHOLD[metric]
-        result.raise_for_status()  # should not raise
+        result.assert_passed()  # should not raise
 
     @pytest.mark.parametrize("metric", ["mean", "rate"])
     def test_failed_when_upper_bound_below_threshold(self, frame_factory, metric):
@@ -331,7 +331,7 @@ class TestChangeGreaterThan:
         assert result.decision == "failed"
         assert result.passed is False
         with pytest.raises(fw.FrameworthyAssertionError):
-            result.raise_for_status()
+            result.assert_passed()
 
     @pytest.mark.parametrize("metric", ["mean", "rate"])
     def test_inconclusive_with_small_noisy_sample(self, frame_factory, metric):
@@ -342,7 +342,7 @@ class TestChangeGreaterThan:
 
         assert result.decision == "inconclusive"
         with pytest.warns(UserWarning):
-            result.raise_for_status()  # should not raise, only warn
+            result.assert_passed()  # should not raise, only warn
 
 
 class TestChangeLessThan:
@@ -362,7 +362,7 @@ class TestChangeLessThan:
         assert result.passed is True
         assert result.direction == "less_than"
         assert result.threshold == LESS_THAN_THRESHOLD[metric]
-        result.raise_for_status()  # should not raise
+        result.assert_passed()  # should not raise
 
     @pytest.mark.parametrize("metric", ["mean", "rate"])
     def test_failed_when_lower_bound_above_threshold(self, frame_factory, metric):
@@ -373,7 +373,7 @@ class TestChangeLessThan:
 
         assert result.decision == "failed"
         with pytest.raises(fw.FrameworthyAssertionError):
-            result.raise_for_status()
+            result.assert_passed()
 
     @pytest.mark.parametrize("metric", ["mean", "rate"])
     def test_inconclusive_with_small_noisy_sample(self, frame_factory, metric):
@@ -384,7 +384,7 @@ class TestChangeLessThan:
 
         assert result.decision == "inconclusive"
         with pytest.warns(UserWarning):
-            result.raise_for_status()  # should not raise, only warn
+            result.assert_passed()  # should not raise, only warn
 
 
 class TestInferenceOptions:

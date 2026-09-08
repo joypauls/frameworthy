@@ -13,18 +13,19 @@ def classify_equivalence(ci_low: float, ci_high: float, within: float) -> Decisi
     """
     Classify a mean-difference CI against an equivalence margin.
 
-    * `equivalent`: the whole CI lies inside `(-within, within)`.
-    * `changed`: the whole CI lies outside `(-within, within)`, i.e. it
-      doesn't even touch the margin.
-    * `inconclusive`: the CI straddles a margin boundary.
+    * `PASSED`: the whole CI lies inside `(-within, within)`, i.e. the
+      difference is equivalent.
+    * `FAILED`: the whole CI lies outside `(-within, within)`, i.e. it
+      doesn't even touch the margin, so the difference has changed.
+    * `INCONCLUSIVE`: the CI straddles a margin boundary.
     """
     if within <= 0:
         raise InvalidParameterError(f"`within` must be positive, got {within}.")
 
     if -within <= ci_low and ci_high <= within:
-        return Decision.EQUIVALENT
+        return Decision.PASSED
     if ci_high < -within or ci_low > within:
-        return Decision.CHANGED
+        return Decision.FAILED
     return Decision.INCONCLUSIVE
 
 

@@ -176,10 +176,11 @@ class MetricCheck:
         within `within`.
 
         Builds a `(1 - 2 * alpha)` confidence interval for the difference,
-        then classifies it against the `within` margin as `equivalent`,
-        `changed`, or `inconclusive`. See `frameworthy._classify` for the
-        decision rule, and this class's docstring for the metric-specific
-        inference method and what `method="bootstrap"` changes.
+        then classifies it against the `within` margin as `passed`
+        (equivalent), `failed` (changed), or `inconclusive`. See
+        `frameworthy._classify` for the decision rule, and this class's
+        docstring for the metric-specific inference method and what
+        `method="bootstrap"` changes.
         """
         inference = InferenceConfig(
             alpha=alpha,

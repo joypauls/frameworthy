@@ -53,8 +53,8 @@ class TestPassed:
     @pytest.mark.parametrize(
         "decision, expected",
         [
-            (Decision.EQUIVALENT, True),
-            (Decision.CHANGED, False),
+            (Decision.PASSED, True),
+            (Decision.FAILED, False),
             (Decision.INCONCLUSIVE, False),
         ],
     )
@@ -65,7 +65,7 @@ class TestPassed:
 class TestStr:
     def test_includes_key_details(self):
         result = _make_result(
-            Decision.EQUIVALENT,
+            Decision.PASSED,
             ci_low=-1.0,
             ci_high=3.0,
             diff=1.0,
@@ -74,7 +74,7 @@ class TestStr:
         )
         text = str(result)
 
-        assert "EQUIVALENT" in text
+        assert "PASSED" in text
         assert "mean(revenue)" in text
         assert "+1" in text
         assert "90% CI" in text
@@ -83,7 +83,7 @@ class TestStr:
         assert "paired, n=50" in text
 
     def test_reports_unpaired_sample_sizes(self):
-        result = _make_result(Decision.CHANGED, paired=False, n_before=30, n_after=45)
+        result = _make_result(Decision.FAILED, paired=False, n_before=30, n_after=45)
         text = str(result)
 
         assert "unpaired" in text
@@ -92,7 +92,7 @@ class TestStr:
 
     def test_rate_formats_diff_and_margin_in_percentage_points(self):
         result = _make_result(
-            Decision.EQUIVALENT,
+            Decision.PASSED,
             statistic=Statistic.RATE,
             before_mean=0.40,
             after_mean=0.45,
@@ -113,7 +113,7 @@ class TestStr:
         assert "0.005" not in text
 
     def test_mean_does_not_show_percentage_point_formatting(self):
-        result = _make_result(Decision.EQUIVALENT, statistic=Statistic.MEAN)
+        result = _make_result(Decision.PASSED, statistic=Statistic.MEAN)
         text = str(result)
 
         assert "pp" not in text
@@ -121,20 +121,20 @@ class TestStr:
         assert "after =" not in text
 
 
-class TestRaiseForStatus:
-    def test_equivalent_does_not_raise_or_warn(self, recwarn):
-        _make_result(Decision.EQUIVALENT).raise_for_status()
+class TestAssertPassed:
+    def test_passed_does_not_raise_or_warn(self, recwarn):
+        _make_result(Decision.PASSED).assert_passed()
         assert len(recwarn) == 0
 
-    def test_changed_raises_frameworthy_assertion_error(self):
-        result = _make_result(Decision.CHANGED)
-        with pytest.raises(FrameworthyAssertionError, match="CHANGED"):
-            result.raise_for_status()
+    def test_failed_raises_frameworthy_assertion_error(self):
+        result = _make_result(Decision.FAILED)
+        with pytest.raises(FrameworthyAssertionError, match="FAILED"):
+            result.assert_passed()
 
     def test_inconclusive_warns_but_does_not_raise(self):
         result = _make_result(Decision.INCONCLUSIVE)
         with pytest.warns(UserWarning, match="INCONCLUSIVE"):
-            result.raise_for_status()
+            result.assert_passed()
 
 
 class TestChangeResultPassed:
@@ -203,17 +203,17 @@ class TestChangeResultStr:
         assert "0.005" not in text
 
 
-class TestChangeResultRaiseForStatus:
+class TestChangeResultAssertPassed:
     def test_passed_does_not_raise_or_warn(self, recwarn):
-        _make_change_result(Decision.PASSED).raise_for_status()
+        _make_change_result(Decision.PASSED).assert_passed()
         assert len(recwarn) == 0
 
     def test_failed_raises_frameworthy_assertion_error(self):
         result = _make_change_result(Decision.FAILED)
         with pytest.raises(FrameworthyAssertionError, match="FAILED"):
-            result.raise_for_status()
+            result.assert_passed()
 
     def test_inconclusive_warns_but_does_not_raise(self):
         result = _make_change_result(Decision.INCONCLUSIVE)
         with pytest.warns(UserWarning, match="INCONCLUSIVE"):
-            result.raise_for_status()
+            result.assert_passed()
