@@ -21,10 +21,8 @@ from ._validation import (
     validate_n_resamples,
 )
 
-# a bootstrap-resamplable statistic (e.g. `np.mean`/`np.median`): must
-# accept an `axis=` kwarg so it can be applied to each row of a
-# `(n_resamples, n)` resample matrix at once
 StatisticFunc = Callable[..., np.ndarray]
+AnalyticalDiffFunc = Callable[..., Interval]
 
 
 def wilson_interval(count: int, n: int, alpha: float) -> tuple[float, float]:
@@ -391,9 +389,6 @@ def analytical_rate_diff_ci(
     return independent_rate_diff_ci(before, after, alpha=alpha)
 
 
-AnalyticalDiffFunc = Callable[..., Interval]
-
-
 def diff_ci(
     before: np.ndarray,
     after: np.ndarray,
@@ -402,9 +397,9 @@ def diff_ci(
     alpha: float,
     n_resamples: int,
     rng: np.random.Generator,
-    analytical_fn: AnalyticalDiffFunc,
     method: InferenceMethod,
-    statistic_func: StatisticFunc = np.mean,
+    analytical_func: AnalyticalDiffFunc | None = None,
+    statistic_func: StatisticFunc | None = None,
 ) -> Interval:
     """
     Select an inference strategy and compute a difference CI.
@@ -422,17 +417,26 @@ def diff_ci(
     `rate_diff_ci`'s dispatch logic from scratch.
     """
     validate_method(method)
+
     if method == "analytical":
-        return analytical_fn(before, after, paired=paired, alpha=alpha)
-    return bootstrap_diff_ci(
-        before,
-        after,
-        paired=paired,
-        alpha=alpha,
-        n_resamples=n_resamples,
-        rng=rng,
-        statistic_func=statistic_func,
-    )
+        if analytical_func is None:
+            raise ValueError(
+                "analytical_func must be provided when method='analytical'"
+            )
+        return analytical_func(before, after, paired=paired, alpha=alpha)
+
+    if method == "bootstrap":
+        if statistic_func is None:
+            raise ValueError("statistic_func must be provided when method='bootstrap'")
+        return bootstrap_diff_ci(
+            before,
+            after,
+            paired=paired,
+            alpha=alpha,
+            n_resamples=n_resamples,
+            rng=rng,
+            statistic_func=statistic_func,
+        )
 
 
 def mean_diff_ci(
@@ -459,26 +463,9 @@ def mean_diff_ci(
         alpha=alpha,
         n_resamples=n_resamples,
         rng=rng,
-        analytical_fn=analytical_mean_diff_ci,
         method=method,
-    )
-
-
-def _no_analytical_median_ci(
-    before: np.ndarray,
-    after: np.ndarray,
-    *,
-    paired: bool,
-    alpha: float,
-) -> Interval:
-    """Stand-in `analytical_fn` for `median_diff_ci`: unlike the mean (CLT/
-    t-interval) or rate (Wilson/Newcombe), there's no simple closed-form CI
-    for a difference of medians, so `method="analytical"` isn't supported.
-    """
-    raise UsageError(
-        "There's no closed-form analytical confidence interval for a "
-        "median difference; `.median()` checks only support "
-        '`method="bootstrap"` (the default).'
+        analytical_func=analytical_mean_diff_ci,
+        statistic_func=np.mean,
     )
 
 
@@ -501,6 +488,13 @@ def median_diff_ci(
     `_no_analytical_median_ci`) and `method="bootstrap"` is the only
     supported (and default) path for built-in `.median()` checks.
     """
+    if method == "analytical":
+        raise UsageError(
+            "There's no closed-form analytical confidence interval for a "
+            "median difference; `.median()` checks only support "
+            '`method="bootstrap"` (the default).'
+        )
+
     return diff_ci(
         before,
         after,
@@ -508,8 +502,8 @@ def median_diff_ci(
         alpha=alpha,
         n_resamples=n_resamples,
         rng=rng,
-        analytical_fn=_no_analytical_median_ci,
         method=method,
+        analytical_func=None,
         statistic_func=np.median,
     )
 
@@ -538,6 +532,7 @@ def rate_diff_ci(
         alpha=alpha,
         n_resamples=n_resamples,
         rng=rng,
-        analytical_fn=analytical_rate_diff_ci,
         method=method,
+        analytical_func=analytical_rate_diff_ci,
+        statistic_func=np.mean,
     )

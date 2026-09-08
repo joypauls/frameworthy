@@ -25,6 +25,10 @@ dependencies = [
 requires = ["uv_build>=0.11.3,<0.12.0"]
 build-backend = "uv_build"
 
+[tool.ruff.lint]
+# Report unused imports (F401) but don't auto-remove them on save/fix.
+unfixable = ["F401"]
+
 [dependency-groups]
 dev = [
     "pandas>=3.0.5",
