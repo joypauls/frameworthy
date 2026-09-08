@@ -16,7 +16,6 @@ from ._constants import (
     DEFAULT_ALPHA,
     DEFAULT_INFERENCE_METHOD,
     DEFAULT_N_RESAMPLES,
-    DiffCIFunc,
     Direction,
     InferenceMethod,
     Statistic,
@@ -26,6 +25,26 @@ from ._intervals import mean_diff_ci, median_diff_ci, rate_diff_ci
 from ._pairing import _normalize_keys, assert_unique_keys
 from ._validation import InferenceConfig
 from .results import ChangeResult, EquivalenceResult
+
+
+class DiffCIFunc(Protocol):
+    """Shared call signature for `<metric>_diff_ci`: given
+    paired or independent `before`/`after` arrays, estimate the difference
+    `after - before` and its confidence interval under the given inference
+    `method`.
+    """
+
+    def __call__(
+        self,
+        before: np.ndarray,
+        after: np.ndarray,
+        *,
+        paired: bool,
+        alpha: float,
+        n_resamples: int,
+        rng: np.random.Generator,
+        method: InferenceMethod = ...,
+    ) -> Interval: ...
 
 
 def _equivalence_result(

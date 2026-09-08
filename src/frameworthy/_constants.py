@@ -51,7 +51,7 @@ class Interval(NamedTuple):
 
 
 class DiffCIFunc(Protocol):
-    """Shared call signature for `mean_diff_ci` and `rate_diff_ci`: given
+    """Shared call signature for `<metric>_diff_ci`: given
     paired or independent `before`/`after` arrays, estimate the difference
     `after - before` and its confidence interval under the given inference
     `method`.
