@@ -11,65 +11,83 @@ from frameworthy._backend import to_narwhals_frame
 # interval lands unambiguously on the target verdict for the margin/
 # threshold used alongside it below. See `conftest.py` for the builders.
 
-MARGIN = {"mean": 2.0, "rate": 0.05}
-GREATER_THAN_THRESHOLD = {"mean": -2.0, "rate": -0.005}
-LESS_THAN_THRESHOLD = {"mean": 20.0, "rate": 0.05}
+MARGIN = {"mean": 2.0, "rate": 0.05, "median": 2.0}
+GREATER_THAN_THRESHOLD = {"mean": -2.0, "rate": -0.005, "median": -2.0}
+LESS_THAN_THRESHOLD = {"mean": 20.0, "rate": 0.05, "median": 20.0}
 
+# `median`'s bootstrap CI is (necessarily) non-deterministic without a
+# fixed `random_state`, but for these same mean-tuned arrays/margins the
+# resulting median-difference CI lands comfortably clear of the verdict
+# boundary regardless of seed (spot-checked across many seeds), so no
+# `random_state` is needed here to avoid flakiness.
 EQUIVALENT_ARRAYS = {
     ("mean", True): paired_mean_arrays(n=20, diff=0.3, spread=1.0),
     ("mean", False): unpaired_mean_arrays(20, 22, 100.0, 100.3, spread=1.0),
     ("rate", True): (rate_array(500, 0.30), rate_array(500, 0.31)),
     ("rate", False): (rate_array(2000, 0.30), rate_array(2000, 0.31)),
+    ("median", True): paired_mean_arrays(n=20, diff=0.3, spread=1.0),
+    ("median", False): unpaired_mean_arrays(20, 22, 100.0, 100.3, spread=1.0),
 }
 CHANGED_ARRAYS = {
     ("mean", True): paired_mean_arrays(n=20, diff=10.0, spread=1.0),
     ("mean", False): unpaired_mean_arrays(20, 22, 100.0, 110.0, spread=1.0),
     ("rate", True): (rate_array(500, 0.30), rate_array(500, 0.50)),
     ("rate", False): (rate_array(400, 0.30), rate_array(450, 0.50)),
+    ("median", True): paired_mean_arrays(n=20, diff=10.0, spread=1.0),
+    ("median", False): unpaired_mean_arrays(20, 22, 100.0, 110.0, spread=1.0),
 }
 EQUIVALENCE_INCONCLUSIVE_ARRAYS = {
     ("mean", True): paired_mean_arrays(n=6, diff=1.0, spread=4.0),
     ("mean", False): unpaired_mean_arrays(4, 4, 100.0, 101.0, spread=2.5),
     ("rate", True): (rate_array(30, 0.30), rate_array(30, 0.40)),
     ("rate", False): (rate_array(30, 0.30), rate_array(30, 0.45)),
+    ("median", True): paired_mean_arrays(n=6, diff=1.0, spread=4.0),
+    ("median", False): unpaired_mean_arrays(4, 4, 100.0, 101.0, spread=2.5),
 }
 
 # `change_greater_than(GREATER_THAN_THRESHOLD)`: rules out a drop.
 GREATER_THAN_PASSED_ARRAYS = {
     "mean": paired_mean_arrays(n=20, diff=0.3, spread=1.0),
     "rate": (rate_array(500, 0.30), rate_array(500, 0.30)),
+    "median": paired_mean_arrays(n=20, diff=0.3, spread=1.0),
 }
 GREATER_THAN_FAILED_ARRAYS = {
     "mean": paired_mean_arrays(n=20, diff=-10.0, spread=1.0),
     "rate": (rate_array(500, 0.40), rate_array(500, 0.10)),
+    "median": paired_mean_arrays(n=20, diff=-10.0, spread=1.0),
 }
 GREATER_THAN_INCONCLUSIVE_ARRAYS = {
     "mean": paired_mean_arrays(n=6, diff=-1.5, spread=4.0),
     "rate": (rate_array(40, 0.30), rate_array(40, 0.28)),
+    "median": paired_mean_arrays(n=6, diff=-1.5, spread=4.0),
 }
 
 # `change_less_than(LESS_THAN_THRESHOLD)`: rules out a rise.
 LESS_THAN_PASSED_ARRAYS = {
     "mean": unpaired_mean_arrays(300, 300, 100.0, 102.0, spread=5.0),
     "rate": (rate_array(500, 0.02), rate_array(500, 0.025)),
+    "median": unpaired_mean_arrays(300, 300, 100.0, 102.0, spread=5.0),
 }
 LESS_THAN_FAILED_ARRAYS = {
     "mean": unpaired_mean_arrays(300, 300, 100.0, 140.0, spread=5.0),
     "rate": (rate_array(500, 0.02), rate_array(500, 0.15)),
+    "median": unpaired_mean_arrays(300, 300, 100.0, 140.0, spread=5.0),
 }
 LESS_THAN_INCONCLUSIVE_ARRAYS = {
     "mean": unpaired_mean_arrays(6, 6, 100.0, 118.0, spread=8.0),
     "rate": (rate_array(60, 0.02), rate_array(60, 0.08)),
+    "median": unpaired_mean_arrays(6, 6, 100.0, 118.0, spread=8.0),
 }
 
 
 def _column_name(metric: str) -> str:
-    return "revenue" if metric == "mean" else "converted"
+    return "revenue" if metric in ("mean", "median") else "converted"
 
 
 def _build_check(frame_factory, metric: str, paired: bool, before, after):
-    """Build a `MeanCheck`/`RateCheck` from raw `before`/`after` arrays,
-    wiring up `paired_by` (paired) or two independent dataframes (unpaired).
+    """Build a `MeanCheck`/`RateCheck`/`MedianCheck` from raw `before`/
+    `after` arrays, wiring up `paired_by` (paired) or two independent
+    dataframes (unpaired).
     """
     column = _column_name(metric)
     if paired:
@@ -82,7 +100,7 @@ def _build_check(frame_factory, metric: str, paired: bool, before, after):
         after_df = frame_factory({column: after})
         check_ = fw.check(after_df, before=before_df)
 
-    return check_.mean(column) if metric == "mean" else check_.rate(column)
+    return getattr(check_, metric)(column)
 
 
 class TestCheckConstruction:
@@ -256,6 +274,37 @@ class TestRateSpecific:
         assert result.decision == "failed"
 
 
+class TestMedianSpecific:
+    """Behavior unique to `MedianCheck`: unlike `MeanCheck`/`RateCheck`,
+    there's no analytical estimator for a median difference, so it
+    defaults to (and is limited to) `method="bootstrap"`.
+    """
+
+    def test_default_method_is_bootstrap(self, frame_factory):
+        before, after = EQUIVALENT_ARRAYS["median", True]
+        result = _build_check(frame_factory, "median", True, before, after).equivalent(
+            within=MARGIN["median"]
+        )
+
+        assert result.n_resamples > 0
+
+    @pytest.mark.parametrize(
+        "claim",
+        [
+            lambda check_: check_.equivalent(within=5.0, method="analytical"),
+            lambda check_: check_.change_greater_than(-5.0, method="analytical"),
+            lambda check_: check_.change_less_than(5.0, method="analytical"),
+        ],
+        ids=["equivalent", "change_greater_than", "change_less_than"],
+    )
+    def test_rejects_analytical_method(self, frame_factory, claim):
+        before, after = EQUIVALENT_ARRAYS["median", True]
+        check_ = _build_check(frame_factory, "median", True, before, after)
+
+        with pytest.raises(fw.UsageError, match="no closed-form"):
+            claim(check_)
+
+
 class TestEquivalent:
     """Verdict coverage for `.equivalent()`, across both built-in metrics
     and both pairing modes. Each case's `(before, after)` arrays are
@@ -263,7 +312,7 @@ class TestEquivalent:
     verdict -- no seed-fishing required.
     """
 
-    @pytest.mark.parametrize("metric", ["mean", "rate"])
+    @pytest.mark.parametrize("metric", ["mean", "rate", "median"])
     @pytest.mark.parametrize("paired", [True, False])
     def test_equivalent_within_margin(self, frame_factory, metric, paired):
         before, after = EQUIVALENT_ARRAYS[metric, paired]
@@ -276,7 +325,7 @@ class TestEquivalent:
         assert result.paired is paired
         result.assert_passed()  # should not raise
 
-    @pytest.mark.parametrize("metric", ["mean", "rate"])
+    @pytest.mark.parametrize("metric", ["mean", "rate", "median"])
     @pytest.mark.parametrize("paired", [True, False])
     def test_changed_beyond_margin(self, frame_factory, metric, paired):
         before, after = CHANGED_ARRAYS[metric, paired]
@@ -289,7 +338,7 @@ class TestEquivalent:
         with pytest.raises(fw.FrameworthyAssertionError):
             result.assert_passed()
 
-    @pytest.mark.parametrize("metric", ["mean", "rate"])
+    @pytest.mark.parametrize("metric", ["mean", "rate", "median"])
     @pytest.mark.parametrize("paired", [True, False])
     def test_inconclusive_with_small_noisy_sample(self, frame_factory, metric, paired):
         before, after = EQUIVALENCE_INCONCLUSIVE_ARRAYS[metric, paired]
@@ -308,7 +357,7 @@ class TestChangeGreaterThan:
     "same customers, before vs. after" scenario this claim targets.
     """
 
-    @pytest.mark.parametrize("metric", ["mean", "rate"])
+    @pytest.mark.parametrize("metric", ["mean", "rate", "median"])
     def test_passed_when_lower_bound_above_threshold(self, frame_factory, metric):
         before, after = GREATER_THAN_PASSED_ARRAYS[metric]
         result = _build_check(
@@ -321,7 +370,7 @@ class TestChangeGreaterThan:
         assert result.threshold == GREATER_THAN_THRESHOLD[metric]
         result.assert_passed()  # should not raise
 
-    @pytest.mark.parametrize("metric", ["mean", "rate"])
+    @pytest.mark.parametrize("metric", ["mean", "rate", "median"])
     def test_failed_when_upper_bound_below_threshold(self, frame_factory, metric):
         before, after = GREATER_THAN_FAILED_ARRAYS[metric]
         result = _build_check(
@@ -333,7 +382,7 @@ class TestChangeGreaterThan:
         with pytest.raises(fw.FrameworthyAssertionError):
             result.assert_passed()
 
-    @pytest.mark.parametrize("metric", ["mean", "rate"])
+    @pytest.mark.parametrize("metric", ["mean", "rate", "median"])
     def test_inconclusive_with_small_noisy_sample(self, frame_factory, metric):
         before, after = GREATER_THAN_INCONCLUSIVE_ARRAYS[metric]
         result = _build_check(
@@ -351,7 +400,7 @@ class TestChangeLessThan:
     "independent before/after samples" scenario this claim targets.
     """
 
-    @pytest.mark.parametrize("metric", ["mean", "rate"])
+    @pytest.mark.parametrize("metric", ["mean", "rate", "median"])
     def test_passed_when_upper_bound_below_threshold(self, frame_factory, metric):
         before, after = LESS_THAN_PASSED_ARRAYS[metric]
         result = _build_check(
@@ -364,7 +413,7 @@ class TestChangeLessThan:
         assert result.threshold == LESS_THAN_THRESHOLD[metric]
         result.assert_passed()  # should not raise
 
-    @pytest.mark.parametrize("metric", ["mean", "rate"])
+    @pytest.mark.parametrize("metric", ["mean", "rate", "median"])
     def test_failed_when_lower_bound_above_threshold(self, frame_factory, metric):
         before, after = LESS_THAN_FAILED_ARRAYS[metric]
         result = _build_check(
@@ -375,7 +424,7 @@ class TestChangeLessThan:
         with pytest.raises(fw.FrameworthyAssertionError):
             result.assert_passed()
 
-    @pytest.mark.parametrize("metric", ["mean", "rate"])
+    @pytest.mark.parametrize("metric", ["mean", "rate", "median"])
     def test_inconclusive_with_small_noisy_sample(self, frame_factory, metric):
         before, after = LESS_THAN_INCONCLUSIVE_ARRAYS[metric]
         result = _build_check(
@@ -403,7 +452,7 @@ class TestInferenceOptions:
 
         assert result.n_resamples == 0
 
-    @pytest.mark.parametrize("metric", ["mean", "rate"])
+    @pytest.mark.parametrize("metric", ["mean", "rate", "median"])
     def test_bootstrap_method_is_supported(self, frame_factory, metric):
         before, after = EQUIVALENT_ARRAYS[metric, True]
         result = _build_check(frame_factory, metric, True, before, after).equivalent(
@@ -412,7 +461,7 @@ class TestInferenceOptions:
 
         assert result.n_resamples == 1000
 
-    @pytest.mark.parametrize("metric", ["mean", "rate"])
+    @pytest.mark.parametrize("metric", ["mean", "rate", "median"])
     def test_random_state_makes_bootstrap_result_reproducible(
         self, frame_factory, metric
     ):
