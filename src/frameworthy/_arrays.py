@@ -3,8 +3,13 @@ from collections.abc import Sequence
 import narwhals.stable.v2 as nw
 import numpy as np
 
-from ._errors import ColumnNotFoundError, InvalidDataError
+from ._errors import ColumnNotFoundError, InvalidDataError, UsageError
 from ._pairing import join_paired
+
+
+def assert_1d(values: np.ndarray, label: str) -> None:
+    if values.ndim != 1:
+        raise UsageError(f"`{label}` must be a 1-D array, got shape {values.shape}.")
 
 
 def assert_column_exists(columns: Sequence[str], column: str, label: str) -> None:
@@ -109,6 +114,29 @@ def values_from_two_frames(
 
     before_values = before_frame.select(column).drop_nulls()[column].to_numpy()
     after_values = after_frame.select(column).drop_nulls()[column].to_numpy()
+
+    assert_min_count(len(before_values), 2, "before")
+    assert_min_count(len(after_values), 2, "after")
+    return before_values, after_values, False
+
+
+def values_from_two_arrays(
+    before: np.ndarray, after: np.ndarray
+) -> tuple[np.ndarray, np.ndarray, bool]:
+    """Extract usable (non-NaN) values from two independent numpy arrays.
+
+    Mirrors the unpaired branch of `values_from_two_frames`: NaNs are
+    dropped independently on each side, since arrays (unlike `paired_by`
+    dataframes) have no key to align pairs by. Returns
+    `(before_values, after_values, paired)` with `paired` always `False`.
+    """
+    before_values = np.asarray(before, dtype=float)
+    after_values = np.asarray(after, dtype=float)
+    assert_1d(before_values, "before")
+    assert_1d(after_values, "after")
+
+    before_values = before_values[~np.isnan(before_values)]
+    after_values = after_values[~np.isnan(after_values)]
 
     assert_min_count(len(before_values), 2, "before")
     assert_min_count(len(after_values), 2, "after")
