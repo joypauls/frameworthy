@@ -1,4 +1,4 @@
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from typing import ClassVar, TypeVar
 
 import numpy as np
@@ -22,7 +22,7 @@ from ._constants import (
     Statistic,
 )
 from ._errors import UsageError
-from ._intervals import mean_diff_ci, rate_diff_ci
+from ._intervals import mean_diff_ci, median_diff_ci, rate_diff_ci
 from ._pairing import _normalize_keys, assert_unique_keys
 from ._validation import InferenceConfig
 from .results import ChangeResult, EquivalenceResult
@@ -32,6 +32,7 @@ def _equivalence_result(
     *,
     diff_func: DiffCIFunc,
     statistic: Statistic,
+    level_func: Callable[[np.ndarray], float],
     column: str,
     paired: bool,
     before_values: np.ndarray,
@@ -40,9 +41,9 @@ def _equivalence_result(
     inference: InferenceConfig,
 ) -> EquivalenceResult:
     """Shared implementation behind every metric's `.equivalent()`: run
-    `diff_func` (either `mean_diff_ci` or `rate_diff_ci`, which share a
-    signature), classify the resulting CI, and package everything into an
-    `EquivalenceResult`.
+    `diff_func` (e.g. `mean_diff_ci`/`rate_diff_ci`/`median_diff_ci`, which
+    share a signature), classify the resulting CI, and package everything
+    into an `EquivalenceResult`.
     """
     diff, ci_low, ci_high = diff_func(
         before_values,
@@ -60,8 +61,8 @@ def _equivalence_result(
         column=column,
         statistic=statistic,
         paired=paired,
-        before_mean=float(before_values.mean()),
-        after_mean=float(after_values.mean()),
+        before_mean=float(level_func(before_values)),
+        after_mean=float(level_func(after_values)),
         diff=diff,
         ci_low=ci_low,
         ci_high=ci_high,
@@ -77,6 +78,7 @@ def _change_result(
     *,
     diff_func: DiffCIFunc,
     statistic: Statistic,
+    level_func: Callable[[np.ndarray], float],
     column: str,
     paired: bool,
     before_values: np.ndarray,
@@ -86,9 +88,10 @@ def _change_result(
     inference: InferenceConfig,
 ) -> ChangeResult:
     """Shared implementation behind every metric's `.change_greater_than()`/
-    `.change_less_than()`: run `diff_func` (either `mean_diff_ci` or
-    `rate_diff_ci`), classify the resulting CI against `threshold` in the
-    given `direction`, and package everything into a `ChangeResult`.
+    `.change_less_than()`: run `diff_func` (e.g. `mean_diff_ci`/
+    `rate_diff_ci`/`median_diff_ci`), classify the resulting CI against
+    `threshold` in the given `direction`, and package everything into a
+    `ChangeResult`.
 
     The same `(1 - 2 * alpha)` two-sided CI used by equivalence checks is
     reused here: each of its endpoints is individually a valid `(1 - alpha)`
@@ -111,8 +114,8 @@ def _change_result(
         column=column,
         statistic=statistic,
         paired=paired,
-        before_mean=float(before_values.mean()),
-        after_mean=float(after_values.mean()),
+        before_mean=float(level_func(before_values)),
+        after_mean=float(level_func(after_values)),
         diff=diff,
         ci_low=ci_low,
         ci_high=ci_high,
@@ -126,25 +129,36 @@ def _change_result(
 
 
 class MetricCheck:
-    """Shared base for `MeanCheck`/`RateCheck`, and for any future built-in
-    metric: holds the common `before`/`after` construction and defines
-    `.equivalent()`, `.change_greater_than()`, and `.change_less_than()`
-    exactly once, in terms of two things each subclass declares:
+    """Shared base for `MeanCheck`/`RateCheck`/`MedianCheck`, and for any
+    future built-in metric: holds the common `before`/`after` construction
+    and defines `.equivalent()`, `.change_greater_than()`, and
+    `.change_less_than()` exactly once, in terms of what each subclass
+    declares:
 
     * `_statistic`: the `Statistic` this metric represents.
-    * `_diff_func`: the `DiffCIFunc` (e.g. `mean_diff_ci`/`rate_diff_ci`)
-      used to estimate `after - before` and its confidence interval.
+    * `_diff_func`: the `DiffCIFunc` (e.g. `mean_diff_ci`/`rate_diff_ci`/
+      `median_diff_ci`) used to estimate `after - before` and its
+      confidence interval.
+    * `_level_func`: the point-summary function (e.g. `np.mean`/
+      `np.median`) used to report `before_mean`/`after_mean` on the result,
+      in the same unit as `_diff_func`'s difference.
+    * `_default_method`: the `InferenceMethod` used when a claim method's
+      `method` argument is omitted. Defaults to `DEFAULT_INFERENCE_METHOD`
+      ("analytical"); metrics with no analytical estimator (e.g.
+      `MedianCheck`) override this to `"bootstrap"`.
 
     Subclasses may also override `_validate_values()` to add metric-specific
     validation of the extracted `before`/`after` arrays (e.g. `RateCheck`
     requires binary values).
 
     Not meant to be constructed directly; use `Check.mean(...)`/
-    `Check.rate(...)` instead.
+    `Check.rate(...)`/`Check.median(...)` instead.
     """
 
     _statistic: ClassVar[Statistic]
     _diff_func: ClassVar[DiffCIFunc]
+    _level_func: ClassVar[Callable[[np.ndarray], float]] = staticmethod(np.mean)
+    _default_method: ClassVar[InferenceMethod] = DEFAULT_INFERENCE_METHOD
 
     def __init__(
         self,
@@ -171,7 +185,7 @@ class MetricCheck:
         alpha: float = DEFAULT_ALPHA,
         n_resamples: int = DEFAULT_N_RESAMPLES,
         random_state: int | np.random.Generator | None = None,
-        method: InferenceMethod = DEFAULT_INFERENCE_METHOD,
+        method: InferenceMethod | None = None,
     ) -> EquivalenceResult:
         """Test whether the difference (after - before) is equivalent
         within `within`.
@@ -181,17 +195,19 @@ class MetricCheck:
         (equivalent), `failed` (changed), or `inconclusive`. See
         `frameworthy._classify` for the decision rule, and this class's
         docstring for the metric-specific inference method and what
-        `method="bootstrap"` changes.
+        `method="bootstrap"` changes. `method` defaults to
+        `self._default_method` when omitted.
         """
         inference = InferenceConfig(
             alpha=alpha,
             n_resamples=n_resamples,
             random_state=random_state,
-            method=method,
+            method=self._default_method if method is None else method,
         )
         return _equivalence_result(
             diff_func=self._diff_func,
             statistic=self._statistic,
+            level_func=self._level_func,
             column=self._column,
             paired=self._paired,
             before_values=self._before_values,
@@ -207,7 +223,7 @@ class MetricCheck:
         alpha: float = DEFAULT_ALPHA,
         n_resamples: int = DEFAULT_N_RESAMPLES,
         random_state: int | np.random.Generator | None = None,
-        method: InferenceMethod = DEFAULT_INFERENCE_METHOD,
+        method: InferenceMethod | None = None,
     ) -> ChangeResult:
         """Rule out that the difference (after - before) is `threshold` or
         smaller -- e.g. ruling out an unacceptable drop when `threshold` is
@@ -221,17 +237,19 @@ class MetricCheck:
 
         Uses the same inference machinery (and `method`/`n_resamples`/
         `random_state` semantics) as `.equivalent()`; see this class's
-        docstring for metric-specific details.
+        docstring for metric-specific details. `method` defaults to
+        `self._default_method` when omitted.
         """
         inference = InferenceConfig(
             alpha=alpha,
             n_resamples=n_resamples,
             random_state=random_state,
-            method=method,
+            method=self._default_method if method is None else method,
         )
         return _change_result(
             diff_func=self._diff_func,
             statistic=self._statistic,
+            level_func=self._level_func,
             column=self._column,
             paired=self._paired,
             before_values=self._before_values,
@@ -248,7 +266,7 @@ class MetricCheck:
         alpha: float = DEFAULT_ALPHA,
         n_resamples: int = DEFAULT_N_RESAMPLES,
         random_state: int | np.random.Generator | None = None,
-        method: InferenceMethod = DEFAULT_INFERENCE_METHOD,
+        method: InferenceMethod | None = None,
     ) -> ChangeResult:
         """Rule out that the difference (after - before) is `threshold` or
         larger -- e.g. ruling out an unacceptable increase in a metric like
@@ -262,17 +280,19 @@ class MetricCheck:
 
         Uses the same inference machinery (and `method`/`n_resamples`/
         `random_state` semantics) as `.equivalent()`; see this class's
-        docstring for metric-specific details.
+        docstring for metric-specific details. `method` defaults to
+        `self._default_method` when omitted.
         """
         inference = InferenceConfig(
             alpha=alpha,
             n_resamples=n_resamples,
             random_state=random_state,
-            method=method,
+            method=self._default_method if method is None else method,
         )
         return _change_result(
             diff_func=self._diff_func,
             statistic=self._statistic,
+            level_func=self._level_func,
             column=self._column,
             paired=self._paired,
             before_values=self._before_values,
@@ -329,6 +349,29 @@ class RateCheck(MetricCheck):
     def _validate_values(self) -> None:
         assert_binary_values(self._before_values, "before")
         assert_binary_values(self._after_values, "after")
+
+
+class MedianCheck(MetricCheck):
+    """A check bound to comparing the median of one column between two
+    datasets.
+
+    Returned by `Check.median(...)`; not meant to be constructed directly.
+
+    Unlike the mean (CLT/t-interval) or rate (Wilson/Newcombe), there's no
+    simple closed-form confidence interval for a difference of medians, so
+    `method` defaults to `"bootstrap"` here instead of `"analytical"`;
+    passing `method="analytical"` explicitly raises a `UsageError`.
+
+    The target quantity is always `median(after) - median(before)`. If
+    `paired`, bootstrap resamples draw the same indices for both sides
+    (preserving before/after correlation); otherwise `before` and `after`
+    are resampled independently.
+    """
+
+    _statistic = Statistic.MEDIAN
+    _diff_func = staticmethod(median_diff_ci)
+    _level_func = staticmethod(np.median)
+    _default_method = "bootstrap"
 
 
 MetricCheckT = TypeVar("MetricCheckT", bound=MetricCheck)
@@ -404,9 +447,9 @@ class Check:
         before: str | None,
         metric: str,
     ) -> MetricCheckT:
-        """Shared implementation behind `.mean()` and `.rate()`: extract
-        `before`/`after` values for `column` and construct `cls` (either
-        `MeanCheck` or `RateCheck`) from them.
+        """Shared implementation behind `.mean()`, `.rate()`, and
+        `.median()`: extract `before`/`after` values for `column` and
+        construct `cls` (`MeanCheck`/`RateCheck`/`MedianCheck`) from them.
         """
         before_values, after_values, paired = self._extract_before_after(
             column, before, metric
@@ -440,6 +483,18 @@ class Check:
         to `check()`.
         """
         return self._metric_check(RateCheck, column, before, "rate")
+
+    def median(self, column: str, before: str | None = None) -> MedianCheck:
+        """Select a column and compare its median between `before` and
+        `after`.
+
+        If `check()` was given a single dataframe, pass `before=<column
+        name>` here to compare two columns within that same dataframe as
+        paired observations (row-by-row). Otherwise, `before` must be
+        omitted and `column` is compared between the two dataframes passed
+        to `check()`.
+        """
+        return self._metric_check(MedianCheck, column, before, "median")
 
 
 def check(
@@ -502,6 +557,18 @@ class ArrayCheck:
         `column` is used purely as a display label; see `.mean()`.
         """
         return RateCheck(
+            column=column,
+            paired=self._paired,
+            before_values=self._before_values,
+            after_values=self._after_values,
+        )
+
+    def median(self, column: str = "value") -> MedianCheck:
+        """Compare the median of the two arrays.
+
+        `column` is used purely as a display label; see `.mean()`.
+        """
+        return MedianCheck(
             column=column,
             paired=self._paired,
             before_values=self._before_values,
