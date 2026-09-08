@@ -7,6 +7,7 @@ from narwhals.stable.v2.typing import IntoDataFrame
 from ._arrays import (
     assert_binary_values,
     paired_values_from_columns,
+    values_from_two_arrays,
     values_from_two_frames,
 )
 from ._backend import to_narwhals_frame
@@ -459,5 +460,62 @@ def check(
       `.mean(after_column, before=before_column)` compares two columns
       within it as paired, row-by-row observations. `paired_by` is not
       valid in this mode.
+
+    For two 1-D numpy arrays of already-extracted metric values, use
+    `check_arrays(...)` instead.
     """
     return Check(after=after, before=before, paired_by=paired_by)
+
+
+class ArrayCheck:
+    """Entry point for comparing two 1-D numpy arrays of already-extracted
+    metric values, as independent (unpaired) samples.
+
+    Returned by `check_arrays(...)`; not meant to be constructed directly.
+    Unlike `Check`, there's no dataframe/column concept here, so there's
+    also no paired mode -- arrays have no key to align pairs by, which is
+    why `check_arrays()` (unlike `check()`) has no `paired_by` parameter.
+    """
+
+    def __init__(self, after: np.ndarray, before: np.ndarray) -> None:
+        self._before_values, self._after_values, self._paired = values_from_two_arrays(
+            before, after
+        )
+
+    def mean(self, column: str = "value") -> MeanCheck:
+        """Compare the mean of the two arrays.
+
+        `column` is used purely as a display label (e.g. shows up as
+        "mean(column)" in results/messages) -- there's nothing to select,
+        since both arrays were already given in full to `check_arrays()`.
+        """
+        return MeanCheck(
+            column=column,
+            paired=self._paired,
+            before_values=self._before_values,
+            after_values=self._after_values,
+        )
+
+    def rate(self, column: str = "value") -> RateCheck:
+        """Compare the rate (proportion) of the two binary arrays.
+
+        `column` is used purely as a display label; see `.mean()`.
+        """
+        return RateCheck(
+            column=column,
+            paired=self._paired,
+            before_values=self._before_values,
+            after_values=self._after_values,
+        )
+
+
+def check_arrays(after: np.ndarray, before: np.ndarray) -> ArrayCheck:
+    """Start a statistical check comparing two 1-D numpy arrays of
+    already-extracted metric values.
+
+    Always treated as independent samples -- there's no equivalent of
+    `paired_by` since arrays have no key column to align pairs by. Use
+    `check(...)` instead for dataframe input, which supports both paired
+    and unpaired comparisons.
+    """
+    return ArrayCheck(after=after, before=before)

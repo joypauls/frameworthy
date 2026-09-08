@@ -5,11 +5,20 @@ from frameworthy._errors import (
     InvalidDataError,
     UsageError,
 )
-from frameworthy.check import Check, MeanCheck, MetricCheck, RateCheck, check
+from frameworthy.check import (
+    ArrayCheck,
+    Check,
+    MeanCheck,
+    MetricCheck,
+    RateCheck,
+    check,
+    check_arrays,
+)
 from frameworthy.decision import Decision
 from frameworthy.results import ChangeResult, EquivalenceResult
 
 __all__ = [
+    "ArrayCheck",
     "ChangeResult",
     "Check",
     "ColumnNotFoundError",
@@ -23,4 +32,5 @@ __all__ = [
     "RateCheck",
     "UsageError",
     "check",
+    "check_arrays",
 ]
