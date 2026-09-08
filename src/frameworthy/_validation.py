@@ -17,28 +17,22 @@ from ._constants import (
     DEFAULT_N_RESAMPLES,
     InferenceMethod,
 )
-from ._errors import (
-    InsufficientDataError,
-    InvalidColumnDataError,
-    InvalidParameterError,
-)
+from ._errors import InvalidDataError, UsageError
 
 
 def validate_alpha(alpha: float) -> None:
     if not 0 < alpha < 0.5:
-        raise InvalidParameterError(f"`alpha` must be in (0, 0.5), got {alpha}.")
+        raise UsageError(f"`alpha` must be in (0, 0.5), got {alpha}.")
 
 
 def validate_n_resamples(n_resamples: int) -> None:
     if n_resamples < 1:
-        raise InvalidParameterError(
-            f"`n_resamples` must be positive, got {n_resamples}."
-        )
+        raise UsageError(f"`n_resamples` must be positive, got {n_resamples}.")
 
 
 def validate_method(method: InferenceMethod) -> None:
     if method not in ("analytical", "bootstrap"):
-        raise InvalidParameterError(f"Unknown inference `method`: {method!r}.")
+        raise UsageError(f"Unknown inference `method`: {method!r}.")
 
 
 def validate_min_observations(n: int, min_count: int, *, context: str) -> None:
@@ -49,9 +43,7 @@ def validate_min_observations(n: int, min_count: int, *, context: str) -> None:
     values" rather than "observations required for a CI").
     """
     if n < min_count:
-        raise InsufficientDataError(
-            f"At least {min_count} {context} are required, got {n}."
-        )
+        raise InvalidDataError(f"At least {min_count} {context} are required, got {n}.")
 
 
 def validate_equal_length(
@@ -59,7 +51,7 @@ def validate_equal_length(
 ) -> None:
     """Guard a paired comparison against mismatched `before`/`after` lengths."""
     if len(before) != len(after):
-        raise InvalidColumnDataError(
+        raise InvalidDataError(
             f"Paired {context} requires `before` and `after` to have the "
             f"same length, got {len(before)} and {len(after)}."
         )

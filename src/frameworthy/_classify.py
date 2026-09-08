@@ -5,7 +5,7 @@ this module owns turning a computed interval into a `Decision`.
 """
 
 from ._constants import Direction
-from ._errors import InvalidParameterError
+from ._errors import UsageError
 from .decision import Decision
 
 
@@ -20,7 +20,7 @@ def classify_equivalence(ci_low: float, ci_high: float, within: float) -> Decisi
     * `INCONCLUSIVE`: the CI straddles a margin boundary.
     """
     if within <= 0:
-        raise InvalidParameterError(f"`within` must be positive, got {within}.")
+        raise UsageError(f"`within` must be positive, got {within}.")
 
     if -within <= ci_low and ci_high <= within:
         return Decision.PASSED
@@ -59,4 +59,4 @@ def classify_change_bound(
         if ci_low > threshold:
             return Decision.FAILED
         return Decision.INCONCLUSIVE
-    raise InvalidParameterError(f"Unknown `direction`: {direction!r}.")
+    raise UsageError(f"Unknown `direction`: {direction!r}.")

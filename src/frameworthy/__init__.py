@@ -2,9 +2,7 @@ from frameworthy._errors import (
     ColumnNotFoundError,
     FrameworthyAssertionError,
     FrameworthyError,
-    InsufficientDataError,
-    InvalidColumnDataError,
-    InvalidParameterError,
+    InvalidDataError,
     UsageError,
 )
 from frameworthy.check import Check, MeanCheck, MetricCheck, RateCheck, check
@@ -19,9 +17,7 @@ __all__ = [
     "EquivalenceResult",
     "FrameworthyAssertionError",
     "FrameworthyError",
-    "InsufficientDataError",
-    "InvalidColumnDataError",
-    "InvalidParameterError",
+    "InvalidDataError",
     "MeanCheck",
     "MetricCheck",
     "RateCheck",

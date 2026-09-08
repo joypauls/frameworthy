@@ -3,7 +3,7 @@ from collections.abc import Sequence
 import narwhals.stable.v2 as nw
 import numpy as np
 
-from ._errors import ColumnNotFoundError, InsufficientDataError, InvalidColumnDataError
+from ._errors import ColumnNotFoundError, InvalidDataError
 from ._pairing import join_paired
 
 
@@ -14,9 +14,9 @@ def assert_column_exists(columns: Sequence[str], column: str, label: str) -> Non
 
 def assert_min_count(n: int, min_count: int, label: str) -> None:
     if n == 0:
-        raise InsufficientDataError(f"No usable (non-null) values found for {label}.")
+        raise InvalidDataError(f"No usable (non-null) values found for {label}.")
     if n < min_count:
-        raise InsufficientDataError(
+        raise InvalidDataError(
             f"At least {min_count} usable (non-null) values are required for "
             f"{label}, got {n}."
         )
@@ -33,7 +33,7 @@ def assert_binary_values(values: np.ndarray, label: str) -> None:
     is_binary = np.isin(values, [0.0, 1.0])
     if not np.all(is_binary):
         bad_value = values[~is_binary][0]
-        raise InvalidColumnDataError(
+        raise InvalidDataError(
             f"`.rate()` requires {label} values to be binary (0/1 or "
             f"boolean), got a non-binary value: {bad_value!r}."
         )
@@ -43,7 +43,7 @@ def assert_equal_pairs(
     before_values: np.ndarray, after_values: np.ndarray, label: str
 ) -> None:
     if len(before_values) != len(after_values):
-        raise InvalidColumnDataError(
+        raise InvalidDataError(
             f"Paired comparison for {label} produced unequal numbers of usable "
             f"before ({len(before_values)}) and after ({len(after_values)}) "
             "values; before/after values must stay aligned pair-by-pair."

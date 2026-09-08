@@ -1,11 +1,7 @@
 import numpy as np
 import pytest
 
-from frameworthy._errors import (
-    InsufficientDataError,
-    InvalidColumnDataError,
-    InvalidParameterError,
-)
+from frameworthy._errors import InvalidDataError, UsageError
 from frameworthy._validation import (
     InferenceConfig,
     validate_alpha,
@@ -21,7 +17,7 @@ class TestValidateAlpha:
         validate_alpha(0.05)  # should not raise
 
     def test_rejects_invalid_alpha(self):
-        with pytest.raises(InvalidParameterError, match="alpha"):
+        with pytest.raises(UsageError, match="alpha"):
             validate_alpha(0.6)
 
 
@@ -30,7 +26,7 @@ class TestValidateNResamples:
         validate_n_resamples(100)  # should not raise
 
     def test_rejects_non_positive_values(self):
-        with pytest.raises(InvalidParameterError, match="n_resamples"):
+        with pytest.raises(UsageError, match="n_resamples"):
             validate_n_resamples(0)
 
 
@@ -40,7 +36,7 @@ class TestValidateMethod:
         validate_method("bootstrap")  # should not raise
 
     def test_rejects_unknown_method(self):
-        with pytest.raises(InvalidParameterError, match="Unknown inference"):
+        with pytest.raises(UsageError, match="Unknown inference"):
             validate_method("magic")
 
 
@@ -51,7 +47,7 @@ class TestValidateMinObservations:
         )  # should not raise
 
     def test_rejects_below_minimum(self):
-        with pytest.raises(InsufficientDataError, match="At least 2"):
+        with pytest.raises(InvalidDataError, match="At least 2"):
             validate_min_observations(1, 2, context="paired observations")
 
 
@@ -62,7 +58,7 @@ class TestValidateEqualLength:
         )
 
     def test_rejects_unequal_length_arrays(self):
-        with pytest.raises(InvalidColumnDataError, match="same length"):
+        with pytest.raises(InvalidDataError, match="same length"):
             validate_equal_length(
                 np.array([1.0, 2.0]), np.array([3.0, 4.0, 5.0]), context="test"
             )

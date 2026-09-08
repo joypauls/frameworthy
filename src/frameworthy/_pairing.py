@@ -6,7 +6,7 @@ from typing import Any
 import narwhals.stable.v2 as nw
 
 from ._constants import NULL_KEY
-from ._errors import InvalidColumnDataError, InvalidParameterError
+from ._errors import InvalidDataError, UsageError
 
 
 def _normalize_keys(key: str | Sequence[str]) -> list[str]:
@@ -15,7 +15,7 @@ def _normalize_keys(key: str | Sequence[str]) -> list[str]:
 
     keys = list(key)
     if not keys:
-        raise InvalidParameterError("At least one key column is required.")
+        raise UsageError("At least one key column is required.")
 
     return keys
 
@@ -59,7 +59,7 @@ def duplicate_keys(
 def assert_unique_keys(df: nw.DataFrame, keys: list[str], label: str) -> None:
     dupes = duplicate_keys(df, keys)
     if dupes:
-        raise InvalidColumnDataError(
+        raise InvalidDataError(
             f"`{label}` has duplicate values for key {keys}: {dupes[:5]}. "
             "Paired comparisons require exactly one row per key on both sides."
         )

@@ -12,7 +12,7 @@ import numpy as np
 from scipy import stats
 
 from ._constants import DEFAULT_INFERENCE_METHOD, InferenceMethod, Interval
-from ._errors import InvalidParameterError
+from ._errors import UsageError
 from ._validation import (
     validate_alpha,
     validate_equal_length,
@@ -34,9 +34,9 @@ def wilson_interval(count: int, n: int, alpha: float) -> tuple[float, float]:
     """
     validate_alpha(alpha)
     if n < 1:
-        raise InvalidParameterError(f"`n` must be positive, got {n}.")
+        raise UsageError(f"`n` must be positive, got {n}.")
     if not 0 <= count <= n:
-        raise InvalidParameterError(f"`count` must be in [0, {n}], got {count}.")
+        raise UsageError(f"`count` must be in [0, {n}], got {count}.")
 
     ci = stats.binomtest(count, n).proportion_ci(
         confidence_level=1 - 2 * alpha, method="wilson"

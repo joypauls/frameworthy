@@ -96,7 +96,7 @@ class TestCheckConstruction:
         before = frame_factory({"customer_id": [1, 1], "revenue": [10.0, 11.0]})
         after = frame_factory({"customer_id": [1], "revenue": [12.0]})
 
-        with pytest.raises(fw.InvalidColumnDataError, match="before"):
+        with pytest.raises(fw.InvalidDataError, match="before"):
             fw.check(after, before=before, paired_by="customer_id")
 
     def test_accepts_narwhals_frame_via_backend_helper(self, frame_factory):
@@ -212,7 +212,7 @@ class TestSameDataframeComparison:
             {"score_before": [None, None, None], "score_after": [1.0, 2.0, 3.0]}
         )
 
-        with pytest.raises(fw.InsufficientDataError, match="No usable"):
+        with pytest.raises(fw.InvalidDataError, match="No usable"):
             fw.check(df).mean("score_after", before="score_before")
 
     def test_drops_rows_with_nulls_in_either_column(self, frame_factory):
@@ -231,7 +231,7 @@ class TestSameDataframeComparison:
     def test_too_few_usable_pairs_raises_value_error(self, frame_factory):
         df = frame_factory({"score_before": [10.0, None], "score_after": [11.0, None]})
 
-        with pytest.raises(fw.InsufficientDataError, match="At least 2"):
+        with pytest.raises(fw.InvalidDataError, match="At least 2"):
             fw.check(df).mean("score_after", before="score_before")
 
 
@@ -240,7 +240,7 @@ class TestRateSpecific:
         before = frame_factory({"count": [0.0, 1.0, 2.0]})
         after = frame_factory({"count": [0.0, 1.0, 1.0]})
 
-        with pytest.raises(fw.InvalidColumnDataError, match="binary"):
+        with pytest.raises(fw.InvalidDataError, match="binary"):
             fw.check(after, before=before).rate("count")
 
     def test_boundary_all_zero_does_not_collapse_to_a_point(self, frame_factory):
@@ -460,7 +460,7 @@ class TestInferenceOptions:
         before, after = EQUIVALENT_ARRAYS["mean", True]
         check_ = _build_check(frame_factory, "mean", True, before, after)
 
-        with pytest.raises(fw.InvalidParameterError, match="Unknown inference"):
+        with pytest.raises(fw.UsageError, match="Unknown inference"):
             claim(check_)
 
     def test_rejects_invalid_alpha_before_computing_ci(self, frame_factory):
@@ -470,5 +470,5 @@ class TestInferenceOptions:
         before, after = EQUIVALENT_ARRAYS["mean", True]
         check_ = _build_check(frame_factory, "mean", True, before, after)
 
-        with pytest.raises(fw.InvalidParameterError, match="alpha"):
+        with pytest.raises(fw.UsageError, match="alpha"):
             check_.equivalent(within=5.0, alpha=0.6)
