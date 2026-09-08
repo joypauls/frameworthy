@@ -11,7 +11,7 @@ from collections.abc import Callable
 import numpy as np
 from scipy import stats
 
-from ._constants import DEFAULT_INFERENCE_METHOD, InferenceMethod, Interval
+from ._constants import InferenceMethod, Interval
 from ._errors import UsageError
 from ._validation import (
     validate_alpha,
@@ -403,7 +403,7 @@ def diff_ci(
     n_resamples: int,
     rng: np.random.Generator,
     analytical_fn: AnalyticalDiffFunc,
-    method: InferenceMethod = DEFAULT_INFERENCE_METHOD,
+    method: InferenceMethod,
     statistic_func: StatisticFunc = np.mean,
 ) -> Interval:
     """
@@ -443,7 +443,7 @@ def mean_diff_ci(
     alpha: float,
     n_resamples: int,
     rng: np.random.Generator,
-    method: InferenceMethod = DEFAULT_INFERENCE_METHOD,
+    method: InferenceMethod = "analytical",
 ) -> Interval:
     """
     Select an inference strategy and compute the mean difference CI.
@@ -522,7 +522,7 @@ def rate_diff_ci(
     alpha: float,
     n_resamples: int,
     rng: np.random.Generator,
-    method: InferenceMethod = DEFAULT_INFERENCE_METHOD,
+    method: InferenceMethod = "analytical",
 ) -> Interval:
     """
     Select an inference strategy and compute the rate difference CI.

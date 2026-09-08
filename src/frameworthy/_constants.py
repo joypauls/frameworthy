@@ -10,7 +10,7 @@ DEFAULT_N_RESAMPLES = 10_000
 
 # inference strategy options
 InferenceMethod = Literal["analytical", "bootstrap"]
-DEFAULT_INFERENCE_METHOD: InferenceMethod = "analytical"
+DEFAULT_INFERENCE_METHOD = "analytical"
 
 # one-sided claim direction for `.change_greater_than()`/`.change_less_than()`
 Direction = Literal["greater_than", "less_than"]
