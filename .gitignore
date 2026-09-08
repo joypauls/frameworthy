@@ -2,6 +2,7 @@ node_modules/
 docs/.vitepress/cache
 DESIGN.md
 VISION.md
+AGENTS.md
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

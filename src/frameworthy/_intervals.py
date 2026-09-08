@@ -21,6 +21,11 @@ from ._validation import (
     validate_n_resamples,
 )
 
+# a bootstrap-resamplable statistic (e.g. `np.mean`/`np.median`): must
+# accept an `axis=` kwarg so it can be applied to each row of a
+# `(n_resamples, n)` resample matrix at once
+StatisticFunc = Callable[..., np.ndarray]
+
 
 def wilson_interval(count: int, n: int, alpha: float) -> tuple[float, float]:
     """
@@ -50,16 +55,23 @@ def _bootstrap_paired_diffs(
     *,
     n_resamples: int,
     rng: np.random.Generator,
+    statistic_func: StatisticFunc,
 ) -> tuple[float, np.ndarray]:
     validate_equal_length(before, after, context="bootstrap")
     validate_min_observations(
         len(before), 2, context="paired observations to bootstrap"
     )
 
-    diffs = after - before
-    observed = float(diffs.mean())
-    idx = rng.integers(0, len(diffs), size=(n_resamples, len(diffs)))
-    boot_diffs = diffs[idx].mean(axis=1)
+    observed = float(statistic_func(after) - statistic_func(before))
+    # resample pairs jointly (the same drawn indices for both sides), which
+    # preserves before/after correlation; for `statistic_func=np.mean` this
+    # is identical to resampling the precomputed diffs directly, since mean
+    # is linear, but it also generalizes correctly to non-linear statistics
+    # like `np.median`
+    idx = rng.integers(0, len(before), size=(n_resamples, len(before)))
+    boot_diffs = statistic_func(after[idx], axis=1) - statistic_func(
+        before[idx], axis=1
+    )
 
     return observed, boot_diffs
 
@@ -70,15 +82,18 @@ def _bootstrap_unpaired_diffs(
     *,
     n_resamples: int,
     rng: np.random.Generator,
+    statistic_func: StatisticFunc,
 ) -> tuple[float, np.ndarray]:
     validate_min_observations(
         min(len(before), len(after)), 2, context="observations per side to bootstrap"
     )
 
-    observed = float(after.mean() - before.mean())
+    observed = float(statistic_func(after) - statistic_func(before))
     before_idx = rng.integers(0, len(before), size=(n_resamples, len(before)))
     after_idx = rng.integers(0, len(after), size=(n_resamples, len(after)))
-    boot_diffs = after[after_idx].mean(axis=1) - before[before_idx].mean(axis=1)
+    boot_diffs = statistic_func(after[after_idx], axis=1) - statistic_func(
+        before[before_idx], axis=1
+    )
 
     return observed, boot_diffs
 
@@ -91,19 +106,26 @@ def bootstrap_diff_ci(
     alpha: float,
     n_resamples: int,
     rng: np.random.Generator,
+    statistic_func: StatisticFunc = np.mean,
 ) -> Interval:
     """
     Bootstrap the difference `after - before` and its confidence interval.
 
     Valid for any bounded array, including the 0/1 values `.rate()` checks
     resample directly (hence the generic name, rather than `*_mean_*`: this
-    is the shared bootstrap fallback for both `mean_diff_ci` and
-    `rate_diff_ci`).
+    is the shared bootstrap fallback for `mean_diff_ci`, `rate_diff_ci`, and
+    `median_diff_ci`).
+
+    `statistic_func` (default `np.mean`) is the statistic whose difference
+    is bootstrapped; it must accept an `axis=` kwarg (e.g. `np.mean`/
+    `np.median`) so it can be applied to every row of a resample matrix at
+    once.
 
     If `paired`, `before` and `after` must be the same length and correspond
-    element-wise; the diffs are resampled together. Otherwise, `before` and
-    `after` are resampled independently, which is valid for unpaired/
-    independent samples.
+    element-wise; both sides are resampled by the same drawn indices,
+    preserving before/after correlation. Otherwise, `before` and `after`
+    are resampled independently, which is valid for unpaired/independent
+    samples.
 
     Returns `(observed_diff, ci_low, ci_high)` where the interval is the
     `(1 - 2 * alpha)` percentile bootstrap CI.
@@ -113,11 +135,19 @@ def bootstrap_diff_ci(
 
     if paired:
         observed, boot_diffs = _bootstrap_paired_diffs(
-            before, after, n_resamples=n_resamples, rng=rng
+            before,
+            after,
+            n_resamples=n_resamples,
+            rng=rng,
+            statistic_func=statistic_func,
         )
     else:
         observed, boot_diffs = _bootstrap_unpaired_diffs(
-            before, after, n_resamples=n_resamples, rng=rng
+            before,
+            after,
+            n_resamples=n_resamples,
+            rng=rng,
+            statistic_func=statistic_func,
         )
 
     ci_low, ci_high = np.percentile(boot_diffs, [100 * alpha, 100 * (1 - alpha)])
@@ -374,6 +404,7 @@ def diff_ci(
     rng: np.random.Generator,
     analytical_fn: AnalyticalDiffFunc,
     method: InferenceMethod = DEFAULT_INFERENCE_METHOD,
+    statistic_func: StatisticFunc = np.mean,
 ) -> Interval:
     """
     Select an inference strategy and compute a difference CI.
@@ -383,6 +414,8 @@ def diff_ci(
     `analytical_rate_diff_ci`) versus the generic bootstrap fallback
     (`bootstrap_diff_ci`), which works for any metric but doesn't get the
     boundary-case benefits of a metric-specific analytical estimator.
+    `statistic_func` is only used on the bootstrap path; see
+    `bootstrap_diff_ci`.
 
     A new metric only needs its own `analytical_fn`; it can reuse this
     dispatcher directly rather than re-implementing `mean_diff_ci`/
@@ -398,6 +431,7 @@ def diff_ci(
         alpha=alpha,
         n_resamples=n_resamples,
         rng=rng,
+        statistic_func=statistic_func,
     )
 
 

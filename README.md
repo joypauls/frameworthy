@@ -6,7 +6,7 @@
 [![PyPI pyversions](https://img.shields.io/pypi/pyversions/frameworthy.svg?x=1)](https://pypi.org/project/frameworthy/)
 [![codecov](https://codecov.io/gh/joypauls/frameworthy/branch/main/graph/badge.svg?token=npu0JtY8hc)](https://codecov.io/gh/joypauls/frameworthy)
 
-Lightweight statistical validation library for dataframes and metric changes.
+Lightweight statistical validation library for data changes.
 
 <div align="center"><img src="docs/public/banner.png" width="600"></div>
 
