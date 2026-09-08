@@ -9,6 +9,7 @@ from frameworthy._intervals import (
     bootstrap_diff_ci,
     independent_rate_diff_ci,
     mean_diff_ci,
+    median_diff_ci,
     paired_rate_diff_ci,
     rate_diff_ci,
     wilson_interval,
@@ -126,6 +127,43 @@ class TestBootstrapDiffCi:
         )
 
         assert result_a == result_b
+
+    def test_paired_with_median_statistic_func_recovers_known_constant_shift(self):
+        rng = np.random.default_rng(0)
+        before = np.array([10.0, 20.0, 30.0, 40.0, 50.0])
+        after = before + 1.0  # constant shift, zero variance in diffs
+
+        observed, ci_low, ci_high = bootstrap_diff_ci(
+            before,
+            after,
+            paired=True,
+            alpha=0.05,
+            n_resamples=1000,
+            rng=rng,
+            statistic_func=np.median,
+        )
+
+        assert observed == pytest.approx(1.0)
+        assert ci_low == pytest.approx(1.0)
+        assert ci_high == pytest.approx(1.0)
+
+    def test_unpaired_with_median_statistic_func_recovers_known_difference(self):
+        rng = np.random.default_rng(0)
+        before = rng.normal(loc=10.0, scale=1.0, size=500)
+        after = rng.normal(loc=13.0, scale=1.0, size=600)
+
+        observed, ci_low, ci_high = bootstrap_diff_ci(
+            before,
+            after,
+            paired=False,
+            alpha=0.05,
+            n_resamples=2000,
+            rng=rng,
+            statistic_func=np.median,
+        )
+
+        assert observed == pytest.approx(3.0, abs=0.3)
+        assert ci_low < observed < ci_high
 
 
 class TestAnalyticalMeanDiffCi:
@@ -550,6 +588,87 @@ class TestRateDiffCiDispatcher:
 
         with pytest.raises(UsageError, match="Unknown inference"):
             rate_diff_ci(
+                before,
+                after,
+                paired=True,
+                alpha=0.05,
+                n_resamples=100,
+                rng=np.random.default_rng(0),
+                method="magic",
+            )
+
+
+class TestMedianDiffCiDispatcher:
+    def test_default_method_is_bootstrap(self):
+        before = np.array([10.0, 20.0, 30.0, 40.0, 50.0])
+        after = before + 1.0
+
+        result = median_diff_ci(
+            before,
+            after,
+            paired=True,
+            alpha=0.05,
+            n_resamples=500,
+            rng=np.random.default_rng(0),
+        )
+        expected = bootstrap_diff_ci(
+            before,
+            after,
+            paired=True,
+            alpha=0.05,
+            n_resamples=500,
+            rng=np.random.default_rng(0),
+            statistic_func=np.median,
+        )
+
+        assert result == expected
+
+    def test_method_bootstrap_matches_direct_call(self):
+        before = np.array([10.0, 20.0, 30.0, 40.0])
+        after = np.array([11.0, 19.0, 33.0, 42.0])
+
+        result = median_diff_ci(
+            before,
+            after,
+            paired=False,
+            alpha=0.05,
+            n_resamples=500,
+            rng=np.random.default_rng(42),
+            method="bootstrap",
+        )
+        expected = bootstrap_diff_ci(
+            before,
+            after,
+            paired=False,
+            alpha=0.05,
+            n_resamples=500,
+            rng=np.random.default_rng(42),
+            statistic_func=np.median,
+        )
+
+        assert result == expected
+
+    def test_method_analytical_raises_usage_error(self):
+        before = np.array([10.0, 20.0, 30.0])
+        after = before + 1.0
+
+        with pytest.raises(UsageError, match="no closed-form"):
+            median_diff_ci(
+                before,
+                after,
+                paired=True,
+                alpha=0.05,
+                n_resamples=100,
+                rng=np.random.default_rng(0),
+                method="analytical",
+            )
+
+    def test_rejects_unknown_method(self):
+        before = np.array([10.0, 20.0, 30.0])
+        after = before + 1.0
+
+        with pytest.raises(UsageError, match="Unknown inference"):
+            median_diff_ci(
                 before,
                 after,
                 paired=True,

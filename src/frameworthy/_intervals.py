@@ -464,6 +464,56 @@ def mean_diff_ci(
     )
 
 
+def _no_analytical_median_ci(
+    before: np.ndarray,
+    after: np.ndarray,
+    *,
+    paired: bool,
+    alpha: float,
+) -> Interval:
+    """Stand-in `analytical_fn` for `median_diff_ci`: unlike the mean (CLT/
+    t-interval) or rate (Wilson/Newcombe), there's no simple closed-form CI
+    for a difference of medians, so `method="analytical"` isn't supported.
+    """
+    raise UsageError(
+        "There's no closed-form analytical confidence interval for a "
+        "median difference; `.median()` checks only support "
+        '`method="bootstrap"` (the default).'
+    )
+
+
+def median_diff_ci(
+    before: np.ndarray,
+    after: np.ndarray,
+    *,
+    paired: bool,
+    alpha: float,
+    n_resamples: int,
+    rng: np.random.Generator,
+    method: InferenceMethod = "bootstrap",
+) -> Interval:
+    """
+    Select an inference strategy and compute the median difference CI.
+
+    Thin wrapper around `diff_ci` with `statistic_func=np.median`: since
+    there's no analytical estimator for a median difference,
+    `method="analytical"` raises a `UsageError` (see
+    `_no_analytical_median_ci`) and `method="bootstrap"` is the only
+    supported (and default) path for built-in `.median()` checks.
+    """
+    return diff_ci(
+        before,
+        after,
+        paired=paired,
+        alpha=alpha,
+        n_resamples=n_resamples,
+        rng=rng,
+        analytical_fn=_no_analytical_median_ci,
+        method=method,
+        statistic_func=np.median,
+    )
+
+
 def rate_diff_ci(
     before: np.ndarray,
     after: np.ndarray,
