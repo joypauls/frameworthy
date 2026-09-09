@@ -1,9 +1,9 @@
 import warnings
 from dataclasses import dataclass
 
-from ._constants import Direction, Statistic
+from ._constants import Direction, Metric
 from ._errors import FrameworthyAssertionError
-from ._format import format_levels, format_margin, format_value
+from ._format import format_margin, format_point_values, format_value
 from .decision import Decision
 
 
@@ -21,10 +21,10 @@ class ComparisonResult:
 
     decision: Decision
     column: str
-    statistic: Statistic
+    metric: Metric
     paired: bool
-    before_mean: float
-    after_mean: float
+    before_value: float
+    after_value: float
     diff: float
     ci_low: float
     ci_high: float
@@ -50,12 +50,14 @@ class ComparisonResult:
             if self.paired
             else f"unpaired, n_before={self.n_before}, n_after={self.n_after}"
         )
-        levels = format_levels(self.before_mean, self.after_mean, self.statistic)
-        diff_str = format_value(self.diff, self.statistic)
+        point_values = format_point_values(
+            self.before_value, self.after_value, self.metric
+        )
+        diff_str = format_value(self.diff, self.metric)
 
         return (
-            f"{self.decision.value.upper()}: {self.statistic.value}({self.column}) "
-            f"{levels}"
+            f"{self.decision.value.upper()}: {self.metric.value}({self.column}) "
+            f"{point_values}"
             f"diff (after - before) = {diff_str}, "
             f"{self._claim_summary()}"
             f"alpha = {self.alpha:g}, {pairing}"
@@ -84,10 +86,10 @@ class EquivalenceResult(ComparisonResult):
     def _claim_summary(self) -> str:
         ci_pct = round((1 - 2 * self.alpha) * 100)
         ci_str = (
-            f"[{format_value(self.ci_low, self.statistic)}, "
-            f"{format_value(self.ci_high, self.statistic)}]"
+            f"[{format_value(self.ci_low, self.metric)}, "
+            f"{format_value(self.ci_high, self.metric)}]"
         )
-        margin_str = format_margin(self.within, self.statistic)
+        margin_str = format_margin(self.within, self.metric)
         return f"{ci_pct}% CI = {ci_str}, margin = {margin_str}, "
 
 
@@ -115,8 +117,8 @@ class ChangeResult(ComparisonResult):
             bound = self.ci_high
             method_name = "change_less_than"
 
-        bound_str = format_value(bound, self.statistic)
-        threshold_str = format_value(self.threshold, self.statistic)
+        bound_str = format_value(bound, self.metric)
+        threshold_str = format_value(self.threshold, self.metric)
         return (
             f"{bound_pct}% one-sided {bound_label} = {bound_str}, "
             f"threshold ({method_name}) = {threshold_str}, "

@@ -92,7 +92,7 @@ def test_dataframe_check_equivalent_for_changed_with_buffer(
 
 #     assert result.decision == "passed"
 #     assert result.paired is True
-#     assert result.statistic == "rate"
+#     assert result.metric == "rate"
 #     assert result.n_before == result.n_after == len(test_df)
 #     result.assert_passed()
 
@@ -116,8 +116,8 @@ def test_dataframe_check_equivalent_for_changed_with_buffer(
 
 #     assert result.decision == "failed"
 #     assert result.paired is False
-#     assert result.before_mean == pytest.approx(0.0)
-#     assert result.after_mean == pytest.approx(1.0)
+#     assert result.before_value == pytest.approx(0.0)
+#     assert result.after_value == pytest.approx(1.0)
 #     # the boundary rates (0% and 100%) shouldn't collapse the CI to a point
 #     assert result.ci_low != result.ci_high
 #     with pytest.raises(fw.FrameworthyAssertionError):

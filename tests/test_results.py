@@ -1,6 +1,6 @@
 import pytest
 
-from frameworthy._constants import Statistic
+from frameworthy._constants import Metric
 from frameworthy._errors import FrameworthyAssertionError
 from frameworthy.decision import Decision
 from frameworthy.results import ChangeResult, EquivalenceResult
@@ -10,10 +10,10 @@ def _make_result(decision: Decision, **overrides) -> EquivalenceResult:
     defaults = {
         "decision": decision,
         "column": "revenue",
-        "statistic": Statistic.MEAN,
+        "metric": Metric.MEAN,
         "paired": True,
-        "before_mean": 100.0,
-        "after_mean": 101.0,
+        "before_value": 100.0,
+        "after_value": 101.0,
         "diff": 1.0,
         "ci_low": -1.0,
         "ci_high": 3.0,
@@ -31,10 +31,10 @@ def _make_change_result(decision: Decision, **overrides) -> ChangeResult:
     defaults = {
         "decision": decision,
         "column": "latency_ms",
-        "statistic": Statistic.MEAN,
+        "metric": Metric.MEAN,
         "paired": True,
-        "before_mean": 100.0,
-        "after_mean": 105.0,
+        "before_value": 100.0,
+        "after_value": 105.0,
         "diff": 5.0,
         "ci_low": 1.0,
         "ci_high": 9.0,
@@ -93,9 +93,9 @@ class TestStr:
     def test_rate_formats_diff_and_margin_in_percentage_points(self):
         result = _make_result(
             Decision.PASSED,
-            statistic=Statistic.RATE,
-            before_mean=0.40,
-            after_mean=0.45,
+            metric=Metric.RATE,
+            before_value=0.40,
+            after_value=0.45,
             diff=0.05,
             ci_low=-0.01,
             ci_high=0.03,
@@ -113,7 +113,7 @@ class TestStr:
         assert "0.005" not in text
 
     def test_mean_does_not_show_percentage_point_formatting(self):
-        result = _make_result(Decision.PASSED, statistic=Statistic.MEAN)
+        result = _make_result(Decision.PASSED, metric=Metric.MEAN)
         text = str(result)
 
         assert "pp" not in text
@@ -184,9 +184,9 @@ class TestChangeResultStr:
             ci_low=-0.004,
             ci_high=0.001,
             threshold=-0.005,
-            statistic=Statistic.RATE,
-            before_mean=0.40,
-            after_mean=0.398,
+            metric=Metric.RATE,
+            before_value=0.40,
+            after_value=0.398,
         )
         text = str(result)
 

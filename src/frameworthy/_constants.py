@@ -16,10 +16,10 @@ DEFAULT_INFERENCE_METHOD = "analytical"
 Direction = Literal["greater_than", "less_than"]
 
 
-class Statistic(str, Enum):
-    """Which built-in statistic a check compares between `before` and `after`.
+class Metric(str, Enum):
+    """Which built-in metric a check compares between `before` and `after`.
 
-    Being `str`-based keeps `result.statistic == "rate"`-style comparisons
+    Being `str`-based keeps `result.metric == "rate"`-style comparisons
     working, mirroring `Decision` in `decision.py`.
     """
 
@@ -29,11 +29,11 @@ class Statistic(str, Enum):
 
     @property
     def is_proportion(self) -> bool:
-        """Whether this statistic's natural unit is a proportion, and
-        should therefore be rendered in percentage points (rather than raw
-        units) in result output.
+        """Whether this metric's natural unit is a proportion, and should
+        therefore be rendered in percentage points (rather than raw units)
+        in result output.
         """
-        return self is Statistic.RATE
+        return self is Metric.RATE
 
 
 class Interval(NamedTuple):

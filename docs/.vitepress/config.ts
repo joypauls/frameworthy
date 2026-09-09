@@ -32,13 +32,6 @@ export default defineConfig({
           { text: "Methodology", link: "/methodology" }
         ]
       },
-      // {
-      //   text: "API",
-      //   items: [
-      //     { text: "Preserving Rows", link: "/assertions/preserves-rows" },
-      //     { text: "Preserving Keys", link: "/assertions/preserves-key" }
-      //   ]
-      // }
     ],
 
     socialLinks: [
