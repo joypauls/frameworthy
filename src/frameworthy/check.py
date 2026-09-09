@@ -1,5 +1,5 @@
 from collections.abc import Callable, Sequence
-from typing import ClassVar, TypeVar
+from typing import ClassVar, Protocol, TypeVar
 
 import numpy as np
 from narwhals.stable.v2.typing import IntoDataFrame
@@ -18,6 +18,7 @@ from ._constants import (
     DEFAULT_N_RESAMPLES,
     Direction,
     InferenceMethod,
+    Interval,
     Statistic,
 )
 from ._errors import UsageError
