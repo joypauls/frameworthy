@@ -25,14 +25,6 @@ class Metric(str, Enum):
     RATE = "rate"
     MEDIAN = "median"
 
-    @property
-    def is_proportion(self) -> bool:
-        """Whether this metric's natural unit is a proportion, and should
-        therefore be rendered in percentage points (rather than raw units)
-        in result output.
-        """
-        return self is Metric.RATE
-
 
 class Interval(NamedTuple):
     """A point estimate and its confidence interval: `(diff, low, high)`.

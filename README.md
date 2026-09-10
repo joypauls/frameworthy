@@ -1,6 +1,6 @@
 > ⚠️ WIP: All 0.1.x releases are unstable. 0.2.0 will be the first stable release.
 
-> Releases >0.1.3 are functional and ready for use, but the API is subject tochange.
+> Releases >0.1.3 are functional and ready for use, but the API is subject to change.
 
 # frameworthy
 

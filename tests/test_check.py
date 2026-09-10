@@ -7,11 +7,11 @@ from conftest import paired_mean_arrays, rate_array, unpaired_mean_arrays
 import frameworthy as fw
 from frameworthy._backend import to_narwhals_frame
 
-# --- Deterministic verdict fixtures ------------------------------------
+# --- Deterministic decision fixtures ------------------------------------
 #
 # Each entry is a `(before, after)` pair of numpy arrays, tuned (via
 # `linspace`/exact counts, not RNG) so that the resulting confidence
-# interval lands unambiguously on the target verdict for the margin/
+# interval lands unambiguously on the target decision for the margin/
 # threshold used alongside it below. See `conftest.py` for the builders.
 
 MARGIN = {"mean": 2.0, "rate": 0.05, "median": 2.0}
@@ -20,7 +20,7 @@ LESS_THAN_THRESHOLD = {"mean": 20.0, "rate": 0.05, "median": 20.0}
 
 # `median`'s bootstrap CI is (necessarily) non-deterministic without a
 # fixed `random_state`, but for these same mean-tuned arrays/margins the
-# resulting median-difference CI lands comfortably clear of the verdict
+# resulting median-difference CI lands comfortably clear of the decision
 # boundary regardless of seed (spot-checked across many seeds), so no
 # `random_state` is needed here to avoid flakiness.
 EQUIVALENT_ARRAYS = {
@@ -340,10 +340,10 @@ class TestCustomSpecific:
     there's no `method` kwarg at all (bootstrap is the only option), and
     `name`/`statistic_func` are validated eagerly at construction time.
 
-    Verdict coverage reuses the existing `EQUIVALENT_ARRAYS`/
+    Decision coverage reuses the existing `EQUIVALENT_ARRAYS`/
     `CHANGED_ARRAYS["mean", ...]` fixtures with `statistic_func=np.mean`,
     since a mean-difference bootstrap CI on the same tuned arrays lands on
-    the same verdicts as `MeanCheck`'s own bootstrap path -- no need to
+    the same decisions as `MeanCheck`'s own bootstrap path -- no need to
     invent new arrays just to prove the plumbing works.
     """
 
@@ -459,10 +459,10 @@ class TestCustomSpecific:
 
 
 class TestEquivalent:
-    """Verdict coverage for `.equivalent()`, across both built-in metrics
+    """Decision coverage for `.equivalent()`, across both built-in metrics
     and both pairing modes. Each case's `(before, after)` arrays are
     constructed deterministically (see `conftest.py`) to land on the target
-    verdict -- no seed-fishing required.
+    decision -- no seed-fishing required.
     """
 
     @pytest.mark.parametrize("metric", ["mean", "rate", "median"])
@@ -548,7 +548,7 @@ class TestChangeGreaterThan:
 
 
 class TestChangeLessThan:
-    """Verdict coverage for `.change_less_than()` (ruling out a rise),
+    """Decision coverage for `.change_less_than()` (ruling out a rise),
     across both built-in metrics. Uses unpaired data, mirroring the
     "independent before/after samples" scenario this claim targets.
     """

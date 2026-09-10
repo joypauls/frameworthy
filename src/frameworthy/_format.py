@@ -1,6 +1,6 @@
 """Unit-aware formatting for `ComparisonResult.__str__`.
 
-Centralizes the pp-vs-native-units decision (driven by `Metric.is_proportion`)
+Centralizes the pp-vs-native-units decision
 in one place, rather than each result class re-implementing its own
 `if metric == "rate"` branch.
 """
@@ -12,10 +12,9 @@ def _is_proportion(metric: Metric | str) -> bool:
     """Whether `metric` should be rendered in percentage points.
 
     Only built-in `Metric` members opt into this; a plain `str` metric
-    (a `.custom()` check's `name`) always renders in raw units, since
-    there's no general way to infer an arbitrary statistic's natural unit.
+    (a `.custom()` check's `name`) always renders in raw units.
     """
-    return isinstance(metric, Metric) and metric.is_proportion
+    return isinstance(metric, Metric) and metric == Metric.RATE
 
 
 def metric_label(metric: Metric | str) -> str:
@@ -30,7 +29,7 @@ def format_value(value: float, metric: Metric | str) -> str:
     metric's natural unit: percentage points for proportions, raw units
     otherwise.
     """
-    if _is_proportion(metric):
+    if metric == Metric.RATE:
         return f"{value * 100:+.4g}pp"
     return f"{value:+.4g}"
 
@@ -39,7 +38,7 @@ def format_margin(value: float, metric: Metric | str) -> str:
     """Format an unsigned `±` margin (e.g. an equivalence `within`) in the
     metric's natural unit.
     """
-    if _is_proportion(metric):
+    if metric == Metric.RATE:
         return f"±{value * 100:g}pp"
     return f"±{value:g}"
 
@@ -48,7 +47,7 @@ def format_point_value(value: float, metric: Metric | str) -> str:
     """Format an absolute point value (e.g. `before_value`/`after_value`)
     in the metric's natural unit.
     """
-    if _is_proportion(metric):
+    if metric == Metric.RATE:
         return f"{value:.1%}"
     return f"{value:.4g}"
 
@@ -58,7 +57,7 @@ def format_point_values(before: float, after: float, metric: Metric | str) -> st
     proportions (where the absolute point value is useful context alongside
     the diff), or an empty string for metrics that don't need it.
     """
-    if not _is_proportion(metric):
+    if metric != Metric.RATE:
         return ""
     return (
         f"before = {format_point_value(before, metric)}, "

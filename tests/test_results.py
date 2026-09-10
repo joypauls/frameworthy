@@ -123,10 +123,7 @@ class TestStr:
         assert "after =" not in text
 
     def test_custom_str_metric_renders_in_raw_units(self):
-        # `.custom()` checks use a plain `str` `name` (not a `Metric`
-        # member) for this field; formatting must not crash on
-        # `metric.value`/`metric.is_proportion` and must fall back to raw
-        # units, same as `Metric.MEAN` above.
+        # `.custom()` checks use a plain `str` for `name` not `Metric`
         result = _make_result(
             Decision.PASSED,
             metric="p95_latency",
