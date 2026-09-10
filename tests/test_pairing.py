@@ -1,13 +1,13 @@
 import narwhals.stable.v2 as nw
 import pytest
 
-from frameworthy._errors import InvalidDataError
-from frameworthy._pairing import (
+from frameworthy._dataframes import (
     duplicate_keys,
     join_paired,
     key_counts,
     to_narwhals_frame,
 )
+from frameworthy._errors import InvalidDataError
 
 
 def test_wraps_native_frame_in_narwhals(frame_factory):

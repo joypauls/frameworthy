@@ -5,7 +5,7 @@ import pytest
 from conftest import paired_mean_arrays, rate_array, unpaired_mean_arrays
 
 import frameworthy as fw
-from frameworthy._pairing import to_narwhals_frame
+from frameworthy._dataframes import to_narwhals_frame
 
 # --- Deterministic decision fixtures ------------------------------------
 #

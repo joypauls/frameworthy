@@ -3,8 +3,8 @@ from collections.abc import Sequence
 import narwhals.stable.v2 as nw
 import numpy as np
 
+from ._dataframes import join_paired
 from ._errors import ColumnNotFoundError, InvalidDataError, UsageError
-from ._pairing import join_paired
 
 
 def assert_1d(values: np.ndarray, label: str) -> None:

@@ -9,8 +9,8 @@ from frameworthy._arrays import (
     paired_values_from_columns,
     values_from_two_frames,
 )
+from frameworthy._dataframes import to_narwhals_frame
 from frameworthy._errors import ColumnNotFoundError, InvalidDataError
-from frameworthy._pairing import to_narwhals_frame
 
 
 def test_assert_column_exists_raises_when_missing():

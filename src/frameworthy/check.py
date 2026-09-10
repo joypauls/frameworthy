@@ -18,6 +18,7 @@ from ._constants import (
     InferenceMethod,
     Metric,
 )
+from ._dataframes import _normalize_keys, assert_unique_keys, to_narwhals_frame
 from ._errors import UsageError
 from ._intervals import (
     AnalyticalDiffFunc,
@@ -26,7 +27,6 @@ from ._intervals import (
     analytical_rate_diff_ci,
     diff_ci,
 )
-from ._pairing import _normalize_keys, assert_unique_keys, to_narwhals_frame
 from ._validation import (
     InferenceConfig,
     validate_custom_metric,
