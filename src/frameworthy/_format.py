@@ -29,7 +29,7 @@ def format_value(value: float, metric: Metric | str) -> str:
     metric's natural unit: percentage points for proportions, raw units
     otherwise.
     """
-    if metric == Metric.RATE:
+    if _is_proportion(metric):
         return f"{value * 100:+.4g}pp"
     return f"{value:+.4g}"
 
@@ -38,7 +38,7 @@ def format_margin(value: float, metric: Metric | str) -> str:
     """Format an unsigned `±` margin (e.g. an equivalence `within`) in the
     metric's natural unit.
     """
-    if metric == Metric.RATE:
+    if _is_proportion(metric):
         return f"±{value * 100:g}pp"
     return f"±{value:g}"
 
@@ -47,7 +47,7 @@ def format_point_value(value: float, metric: Metric | str) -> str:
     """Format an absolute point value (e.g. `before_value`/`after_value`)
     in the metric's natural unit.
     """
-    if metric == Metric.RATE:
+    if _is_proportion(metric):
         return f"{value:.1%}"
     return f"{value:.4g}"
 
@@ -57,7 +57,7 @@ def format_point_values(before: float, after: float, metric: Metric | str) -> st
     proportions (where the absolute point value is useful context alongside
     the diff), or an empty string for metrics that don't need it.
     """
-    if metric != Metric.RATE:
+    if not _is_proportion(metric):
         return ""
     return (
         f"before = {format_point_value(before, metric)}, "
