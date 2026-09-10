@@ -7,11 +7,9 @@ from frameworthy._intervals import (
     analytical_mean_diff_ci,
     analytical_rate_diff_ci,
     bootstrap_diff_ci,
+    diff_ci,
     independent_rate_diff_ci,
-    mean_diff_ci,
-    median_diff_ci,
     paired_rate_diff_ci,
-    rate_diff_ci,
     wilson_interval,
 )
 
@@ -317,27 +315,22 @@ class TestAnalyticalMeanDiffCi:
         assert analytical[2] == pytest.approx(bootstrap[2], abs=0.3)
 
 
-class TestMeanDiffCiDispatcher:
-    def test_default_method_is_analytical(self):
+class TestDiffCiDispatcher:
+    """`diff_ci` is the single dispatch point every `MetricCheck` subclass
+    (built-in or custom) calls directly with its own `analytical_func`/
+    `statistic_func`, so it's tested generically here rather than once per
+    metric via now-removed `mean_diff_ci`/`rate_diff_ci`/`median_diff_ci`
+    wrappers -- the per-metric analytical estimators themselves are still
+    covered by `TestAnalyticalMeanDiffCi`/`TestAnalyticalRateDiffCi`, and
+    the metric-level defaulting/rejection behavior is covered end-to-end in
+    `test_check.py`.
+    """
+
+    def test_method_analytical_calls_analytical_func(self):
         before = np.array([10.0, 20.0, 30.0])
         after = before + 1.0
 
-        result = mean_diff_ci(
-            before,
-            after,
-            paired=True,
-            alpha=0.05,
-            n_resamples=100,
-            rng=np.random.default_rng(0),
-        )
-
-        assert result == analytical_mean_diff_ci(before, after, paired=True, alpha=0.05)
-
-    def test_method_analytical_matches_direct_call(self):
-        before = np.array([10.0, 20.0, 30.0])
-        after = before + 1.0
-
-        result = mean_diff_ci(
+        result = diff_ci(
             before,
             after,
             paired=True,
@@ -345,6 +338,7 @@ class TestMeanDiffCiDispatcher:
             n_resamples=100,
             rng=np.random.default_rng(0),
             method="analytical",
+            analytical_func=analytical_mean_diff_ci,
         )
 
         assert result == analytical_mean_diff_ci(before, after, paired=True, alpha=0.05)
@@ -353,7 +347,7 @@ class TestMeanDiffCiDispatcher:
         before = np.array([10.0, 20.0, 30.0, 40.0])
         after = np.array([11.0, 19.0, 33.0, 42.0])
 
-        result = mean_diff_ci(
+        result = diff_ci(
             before,
             after,
             paired=True,
@@ -361,6 +355,7 @@ class TestMeanDiffCiDispatcher:
             n_resamples=500,
             rng=np.random.default_rng(42),
             method="bootstrap",
+            statistic_func=np.mean,
         )
         expected = bootstrap_diff_ci(
             before,
@@ -373,12 +368,28 @@ class TestMeanDiffCiDispatcher:
 
         assert result == expected
 
+    def test_method_analytical_raises_usage_error_when_no_analytical_func(self):
+        before = np.array([10.0, 20.0, 30.0])
+        after = before + 1.0
+
+        with pytest.raises(UsageError, match="no closed-form"):
+            diff_ci(
+                before,
+                after,
+                paired=True,
+                alpha=0.05,
+                n_resamples=100,
+                rng=np.random.default_rng(0),
+                method="analytical",
+                analytical_func=None,
+            )
+
     def test_rejects_unknown_method(self):
         before = np.array([10.0, 20.0, 30.0])
         after = before + 1.0
 
         with pytest.raises(UsageError, match="Unknown inference"):
-            mean_diff_ci(
+            diff_ci(
                 before,
                 after,
                 paired=True,
@@ -386,6 +397,8 @@ class TestMeanDiffCiDispatcher:
                 n_resamples=100,
                 rng=np.random.default_rng(0),
                 method="magic",
+                analytical_func=analytical_mean_diff_ci,
+                statistic_func=np.mean,
             )
 
 
@@ -540,140 +553,3 @@ class TestAnalyticalRateDiffCi:
         result = analytical_rate_diff_ci(before, after, paired=False, alpha=0.05)
 
         assert result == independent_rate_diff_ci(before, after, alpha=0.05)
-
-
-class TestRateDiffCiDispatcher:
-    def test_default_method_is_analytical(self):
-        before = np.array([1.0, 0.0, 1.0, 0.0, 1.0, 1.0])
-        after = np.array([1.0, 1.0, 1.0, 0.0, 0.0, 1.0])
-
-        result = rate_diff_ci(
-            before,
-            after,
-            paired=True,
-            alpha=0.05,
-            n_resamples=100,
-            rng=np.random.default_rng(0),
-        )
-
-        assert result == analytical_rate_diff_ci(before, after, paired=True, alpha=0.05)
-
-    def test_method_bootstrap_matches_direct_call(self):
-        before = np.array([1.0, 0.0, 1.0, 0.0, 1.0, 1.0])
-        after = np.array([1.0, 1.0, 1.0, 0.0, 0.0, 1.0])
-
-        result = rate_diff_ci(
-            before,
-            after,
-            paired=True,
-            alpha=0.05,
-            n_resamples=500,
-            rng=np.random.default_rng(42),
-            method="bootstrap",
-        )
-        expected = bootstrap_diff_ci(
-            before,
-            after,
-            paired=True,
-            alpha=0.05,
-            n_resamples=500,
-            rng=np.random.default_rng(42),
-        )
-
-        assert result == expected
-
-    def test_rejects_unknown_method(self):
-        before = np.array([1.0, 0.0, 1.0])
-        after = np.array([1.0, 1.0, 0.0])
-
-        with pytest.raises(UsageError, match="Unknown inference"):
-            rate_diff_ci(
-                before,
-                after,
-                paired=True,
-                alpha=0.05,
-                n_resamples=100,
-                rng=np.random.default_rng(0),
-                method="magic",
-            )
-
-
-class TestMedianDiffCiDispatcher:
-    def test_default_method_is_bootstrap(self):
-        before = np.array([10.0, 20.0, 30.0, 40.0, 50.0])
-        after = before + 1.0
-
-        result = median_diff_ci(
-            before,
-            after,
-            paired=True,
-            alpha=0.05,
-            n_resamples=500,
-            rng=np.random.default_rng(0),
-        )
-        expected = bootstrap_diff_ci(
-            before,
-            after,
-            paired=True,
-            alpha=0.05,
-            n_resamples=500,
-            rng=np.random.default_rng(0),
-            statistic_func=np.median,
-        )
-
-        assert result == expected
-
-    def test_method_bootstrap_matches_direct_call(self):
-        before = np.array([10.0, 20.0, 30.0, 40.0])
-        after = np.array([11.0, 19.0, 33.0, 42.0])
-
-        result = median_diff_ci(
-            before,
-            after,
-            paired=False,
-            alpha=0.05,
-            n_resamples=500,
-            rng=np.random.default_rng(42),
-            method="bootstrap",
-        )
-        expected = bootstrap_diff_ci(
-            before,
-            after,
-            paired=False,
-            alpha=0.05,
-            n_resamples=500,
-            rng=np.random.default_rng(42),
-            statistic_func=np.median,
-        )
-
-        assert result == expected
-
-    def test_method_analytical_raises_usage_error(self):
-        before = np.array([10.0, 20.0, 30.0])
-        after = before + 1.0
-
-        with pytest.raises(UsageError, match="no closed-form"):
-            median_diff_ci(
-                before,
-                after,
-                paired=True,
-                alpha=0.05,
-                n_resamples=100,
-                rng=np.random.default_rng(0),
-                method="analytical",
-            )
-
-    def test_rejects_unknown_method(self):
-        before = np.array([10.0, 20.0, 30.0])
-        after = before + 1.0
-
-        with pytest.raises(UsageError, match="Unknown inference"):
-            median_diff_ci(
-                before,
-                after,
-                paired=True,
-                alpha=0.05,
-                n_resamples=100,
-                rng=np.random.default_rng(0),
-                method="magic",
-            )

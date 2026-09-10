@@ -1,9 +1,10 @@
 """Confidence-interval estimators for a difference `after - before`.
 
 Split out from `_stats.py`: this module owns interval *computation*
-(Wilson/bootstrap/analytical mean and rate estimators, plus the
-`mean_diff_ci`/`rate_diff_ci` dispatchers); `_classify.py` owns turning a
-computed interval into a `Decision`.
+(Wilson/bootstrap/analytical mean and rate estimators, plus the shared
+`diff_ci` dispatcher); `_classify.py` owns turning a computed interval into
+a `Decision`. `check.py`'s `MetricCheck` subclasses call `diff_ci` directly
+with their own `analytical_func`/`statistic_func`.
 """
 
 from collections.abc import Callable
@@ -111,8 +112,8 @@ def bootstrap_diff_ci(
 
     Valid for any bounded array, including the 0/1 values `.rate()` checks
     resample directly (hence the generic name, rather than `*_mean_*`: this
-    is the shared bootstrap fallback for `mean_diff_ci`, `rate_diff_ci`, and
-    `median_diff_ci`).
+    is the shared bootstrap fallback used by `diff_ci` for every metric,
+    including `.mean()`/`.rate()`/`.median()` checks).
 
     `statistic_func` (default `np.mean`) is the statistic whose difference
     is bootstrapped; it must accept an `axis=` kwarg (e.g. `np.mean`/
@@ -412,13 +413,13 @@ def diff_ci(
     `statistic_func` is only used on the bootstrap path; see
     `bootstrap_diff_ci`.
 
-    A new metric only needs its own `analytical_fn`; it can reuse this
-    dispatcher directly rather than re-implementing `mean_diff_ci`/
-    `rate_diff_ci`'s dispatch logic from scratch. If a metric has no
-    closed-form estimator at all (e.g. `median_diff_ci`), it should simply
-    omit `analytical_func`: `method="analytical"` then raises a
-    `UsageError` here rather than requiring each such metric to
-    re-implement the same rejection.
+    A new metric only needs its own `analytical_func` (or none at all); it
+    calls this dispatcher directly rather than re-implementing the
+    analytical-vs-bootstrap dispatch logic from scratch. If a metric has no
+    closed-form estimator (e.g. `.median()`), it should simply omit
+    `analytical_func`: `method="analytical"` then raises a `UsageError`
+    here rather than requiring each such metric to re-implement the same
+    rejection.
     """
     validate_method(method)
 
@@ -442,95 +443,3 @@ def diff_ci(
             rng=rng,
             statistic_func=statistic_func,
         )
-
-
-def mean_diff_ci(
-    before: np.ndarray,
-    after: np.ndarray,
-    *,
-    paired: bool,
-    alpha: float,
-    n_resamples: int,
-    rng: np.random.Generator,
-    method: InferenceMethod = "analytical",
-) -> Interval:
-    """
-    Select an inference strategy and compute the mean difference CI.
-
-    Thin wrapper around `diff_ci` bound to `analytical_mean_diff_ci`: the
-    analytical path is a t-interval (paired) or Welch's t-interval
-    (independent), used by default for built-in `.mean()` checks.
-    """
-    return diff_ci(
-        before,
-        after,
-        paired=paired,
-        alpha=alpha,
-        n_resamples=n_resamples,
-        rng=rng,
-        method=method,
-        analytical_func=analytical_mean_diff_ci,
-        statistic_func=np.mean,
-    )
-
-
-def median_diff_ci(
-    before: np.ndarray,
-    after: np.ndarray,
-    *,
-    paired: bool,
-    alpha: float,
-    n_resamples: int,
-    rng: np.random.Generator,
-    method: InferenceMethod = "bootstrap",
-) -> Interval:
-    """
-    Select an inference strategy and compute the median difference CI.
-
-    Thin wrapper around `diff_ci` with `statistic_func=np.median` and no
-    `analytical_func`: since there's no analytical estimator for a median
-    difference, `method="analytical"` raises a `UsageError` (from `diff_ci`
-    itself) and `method="bootstrap"` is the only supported (and default)
-    path for built-in `.median()` checks.
-    """
-    return diff_ci(
-        before,
-        after,
-        paired=paired,
-        alpha=alpha,
-        n_resamples=n_resamples,
-        rng=rng,
-        method=method,
-        analytical_func=None,
-        statistic_func=np.median,
-    )
-
-
-def rate_diff_ci(
-    before: np.ndarray,
-    after: np.ndarray,
-    *,
-    paired: bool,
-    alpha: float,
-    n_resamples: int,
-    rng: np.random.Generator,
-    method: InferenceMethod = "analytical",
-) -> Interval:
-    """
-    Select an inference strategy and compute the rate difference CI.
-
-    Thin wrapper around `diff_ci` bound to `analytical_rate_diff_ci`: the
-    analytical path uses the Newcombe/Wilson score-based CIs above, the
-    default for built-in `.rate()` checks.
-    """
-    return diff_ci(
-        before,
-        after,
-        paired=paired,
-        alpha=alpha,
-        n_resamples=n_resamples,
-        rng=rng,
-        method=method,
-        analytical_func=analytical_rate_diff_ci,
-        statistic_func=np.mean,
-    )
