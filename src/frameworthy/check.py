@@ -10,7 +10,6 @@ from ._arrays import (
     values_from_two_arrays,
     values_from_two_frames,
 )
-from ._backend import to_narwhals_frame
 from ._classify import classify_change_bound, classify_equivalence
 from ._constants import (
     DEFAULT_ALPHA,
@@ -27,7 +26,7 @@ from ._intervals import (
     analytical_rate_diff_ci,
     diff_ci,
 )
-from ._pairing import _normalize_keys, assert_unique_keys
+from ._pairing import _normalize_keys, assert_unique_keys, to_narwhals_frame
 from ._validation import (
     InferenceConfig,
     validate_custom_metric,

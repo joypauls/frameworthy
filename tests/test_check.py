@@ -5,7 +5,7 @@ import pytest
 from conftest import paired_mean_arrays, rate_array, unpaired_mean_arrays
 
 import frameworthy as fw
-from frameworthy._backend import to_narwhals_frame
+from frameworthy._pairing import to_narwhals_frame
 
 # --- Deterministic decision fixtures ------------------------------------
 #
@@ -147,9 +147,8 @@ class TestCheckConstruction:
         with pytest.raises(fw.InvalidDataError, match="before"):
             fw.check(after, before=before, paired_by="customer_id")
 
-    def test_accepts_narwhals_frame_via_backend_helper(self, frame_factory):
-        # sanity check that check() works when given already-native frames,
-        # matching how to_narwhals_frame is used elsewhere in the codebase
+    def test_accepts_narwhals_frame_via_helper(self, frame_factory):
+        # sanity check that check() works when given already-native frames
         before = to_narwhals_frame(frame_factory({"revenue": [1.0, 2.0, 3.0, 4.0]}))
         after = to_narwhals_frame(frame_factory({"revenue": [2.0, 3.0, 4.0, 5.0]}))
 
