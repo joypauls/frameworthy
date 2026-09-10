@@ -1,5 +1,5 @@
-from collections.abc import Callable, Sequence
-from typing import ClassVar, Protocol, TypeVar
+from collections.abc import Sequence
+from typing import ClassVar, TypeVar
 
 import numpy as np
 from narwhals.stable.v2.typing import IntoDataFrame
@@ -14,45 +14,29 @@ from ._backend import to_narwhals_frame
 from ._classify import classify_change_bound, classify_equivalence
 from ._constants import (
     DEFAULT_ALPHA,
-    DEFAULT_INFERENCE_METHOD,
     DEFAULT_N_RESAMPLES,
     Direction,
     InferenceMethod,
-    Interval,
     Metric,
 )
 from ._errors import UsageError
-from ._intervals import mean_diff_ci, median_diff_ci, rate_diff_ci
+from ._intervals import (
+    AnalyticalDiffFunc,
+    StatisticFunc,
+    analytical_mean_diff_ci,
+    analytical_rate_diff_ci,
+    diff_ci,
+)
 from ._pairing import _normalize_keys, assert_unique_keys
 from ._validation import InferenceConfig
 from .results import ChangeResult, EquivalenceResult
 
 
-class DiffCIFunc(Protocol):
-    """Shared call signature for `<metric>_diff_ci`: given
-    paired or independent `before`/`after` arrays, estimate the difference
-    `after - before` and its confidence interval under the given inference
-    `method`.
-    """
-
-    def __call__(
-        self,
-        before: np.ndarray,
-        after: np.ndarray,
-        *,
-        paired: bool,
-        alpha: float,
-        n_resamples: int,
-        rng: np.random.Generator,
-        method: InferenceMethod = ...,
-    ) -> Interval: ...
-
-
 def _equivalence_result(
     *,
-    diff_func: DiffCIFunc,
+    analytical_func: AnalyticalDiffFunc | None,
+    statistic_func: StatisticFunc,
     metric: Metric,
-    value_func: Callable[[np.ndarray], float],
     column: str,
     paired: bool,
     before_values: np.ndarray,
@@ -61,11 +45,15 @@ def _equivalence_result(
     inference: InferenceConfig,
 ) -> EquivalenceResult:
     """Shared implementation behind every metric's `.equivalent()`: run
-    `diff_func` (e.g. `mean_diff_ci`/`rate_diff_ci`/`median_diff_ci`, which
-    share a signature), classify the resulting CI, and package everything
-    into an `EquivalenceResult`.
+    `diff_ci` (dispatching on `analytical_func`/`statistic_func`), classify
+    the resulting CI, and package everything into an `EquivalenceResult`.
+
+    `statistic_func` is reused for both the bootstrap statistic and the
+    reported `before_value`/`after_value` -- the same function that
+    estimates the difference is also what "before"/"after" mean for this
+    metric, so there's only one function to keep in sync rather than two.
     """
-    diff, ci_low, ci_high = diff_func(
+    diff, ci_low, ci_high = diff_ci(
         before_values,
         after_values,
         paired=paired,
@@ -73,6 +61,8 @@ def _equivalence_result(
         n_resamples=inference.n_resamples,
         rng=inference.rng,
         method=inference.method,
+        analytical_func=analytical_func,
+        statistic_func=statistic_func,
     )
     decision = classify_equivalence(ci_low, ci_high, within)
 
@@ -81,8 +71,8 @@ def _equivalence_result(
         column=column,
         metric=metric,
         paired=paired,
-        before_value=float(value_func(before_values)),
-        after_value=float(value_func(after_values)),
+        before_value=float(statistic_func(before_values)),
+        after_value=float(statistic_func(after_values)),
         diff=diff,
         ci_low=ci_low,
         ci_high=ci_high,
@@ -96,9 +86,9 @@ def _equivalence_result(
 
 def _change_result(
     *,
-    diff_func: DiffCIFunc,
+    analytical_func: AnalyticalDiffFunc | None,
+    statistic_func: StatisticFunc,
     metric: Metric,
-    value_func: Callable[[np.ndarray], float],
     column: str,
     paired: bool,
     before_values: np.ndarray,
@@ -108,17 +98,16 @@ def _change_result(
     inference: InferenceConfig,
 ) -> ChangeResult:
     """Shared implementation behind every metric's `.change_greater_than()`/
-    `.change_less_than()`: run `diff_func` (e.g. `mean_diff_ci`/
-    `rate_diff_ci`/`median_diff_ci`), classify the resulting CI against
-    `threshold` in the given `direction`, and package everything into a
-    `ChangeResult`.
+    `.change_less_than()`: run `diff_ci` (dispatching on `analytical_func`/
+    `statistic_func`), classify the resulting CI against `threshold` in the
+    given `direction`, and package everything into a `ChangeResult`.
 
     The same `(1 - 2 * alpha)` two-sided CI used by equivalence checks is
     reused here: each of its endpoints is individually a valid `(1 - alpha)`
     one-sided confidence bound, which is exactly what a one-sided directional
     claim needs.
     """
-    diff, ci_low, ci_high = diff_func(
+    diff, ci_low, ci_high = diff_ci(
         before_values,
         after_values,
         paired=paired,
@@ -126,6 +115,8 @@ def _change_result(
         n_resamples=inference.n_resamples,
         rng=inference.rng,
         method=inference.method,
+        analytical_func=analytical_func,
+        statistic_func=statistic_func,
     )
     decision = classify_change_bound(ci_low, ci_high, threshold, direction=direction)
 
@@ -134,8 +125,8 @@ def _change_result(
         column=column,
         metric=metric,
         paired=paired,
-        before_value=float(value_func(before_values)),
-        after_value=float(value_func(after_values)),
+        before_value=float(statistic_func(before_values)),
+        after_value=float(statistic_func(after_values)),
         diff=diff,
         ci_low=ci_low,
         ci_high=ci_high,
@@ -156,16 +147,22 @@ class MetricCheck:
     declares:
 
     * `_metric`: the `Metric` this check represents.
-    * `_diff_func`: the `DiffCIFunc` (e.g. `mean_diff_ci`/`rate_diff_ci`/
-      `median_diff_ci`) used to estimate `after - before` and its
-      confidence interval.
-    * `_value_func`: the point-summary function (e.g. `np.mean`/
-      `np.median`) used to report `before_value`/`after_value` on the
-      result, in the same unit as `_diff_func`'s difference.
+    * `_statistic_func`: the point-summary function (e.g. `np.mean`/
+      `np.median`) used both to report `before_value`/`after_value` on the
+      result *and*, on the bootstrap path, as the statistic whose
+      difference is resampled -- one function serves both roles, so
+      "before"/"after" always mean the same thing that the CI estimates a
+      difference of.
+    * `_analytical_func`: the closed-form CI estimator (e.g.
+      `analytical_mean_diff_ci`/`analytical_rate_diff_ci`) used on the
+      `method="analytical"` path, or `None` if this metric has no
+      closed-form estimator (in which case `method="analytical"` raises a
+      `UsageError` from `diff_ci`, and `_default_method` below resolves to
+      `"bootstrap"`).
     * `_default_method`: the `InferenceMethod` used when a claim method's
-      `method` argument is omitted. Defaults to `DEFAULT_INFERENCE_METHOD`
-      ("analytical"); metrics with no analytical estimator (e.g.
-      `MedianCheck`) override this to `"bootstrap"`.
+      `method` argument is omitted -- derived automatically from whether
+      `_analytical_func` is set, so metrics with no analytical estimator
+      (e.g. `MedianCheck`) don't need to declare it separately.
 
     Subclasses may also override `_validate_values()` to add metric-specific
     validation of the extracted `before`/`after` arrays (e.g. `RateCheck`
@@ -176,9 +173,12 @@ class MetricCheck:
     """
 
     _metric: ClassVar[Metric]
-    _diff_func: ClassVar[DiffCIFunc]
-    _value_func: ClassVar[Callable[[np.ndarray], float]]
-    _default_method: ClassVar[InferenceMethod] = DEFAULT_INFERENCE_METHOD
+    _statistic_func: ClassVar[StatisticFunc]
+    _analytical_func: ClassVar[AnalyticalDiffFunc | None] = None
+
+    @property
+    def _default_method(self) -> InferenceMethod:
+        return "analytical" if self._analytical_func is not None else "bootstrap"
 
     def __init__(
         self,
@@ -225,9 +225,9 @@ class MetricCheck:
             method=self._default_method if method is None else method,
         )
         return _equivalence_result(
-            diff_func=self._diff_func,
+            analytical_func=self._analytical_func,
+            statistic_func=self._statistic_func,
             metric=self._metric,
-            value_func=self._value_func,
             column=self._column,
             paired=self._paired,
             before_values=self._before_values,
@@ -267,9 +267,9 @@ class MetricCheck:
             method=self._default_method if method is None else method,
         )
         return _change_result(
-            diff_func=self._diff_func,
+            analytical_func=self._analytical_func,
+            statistic_func=self._statistic_func,
             metric=self._metric,
-            value_func=self._value_func,
             column=self._column,
             paired=self._paired,
             before_values=self._before_values,
@@ -310,9 +310,9 @@ class MetricCheck:
             method=self._default_method if method is None else method,
         )
         return _change_result(
-            diff_func=self._diff_func,
+            analytical_func=self._analytical_func,
+            statistic_func=self._statistic_func,
             metric=self._metric,
-            value_func=self._value_func,
             column=self._column,
             paired=self._paired,
             before_values=self._before_values,
@@ -338,8 +338,8 @@ class MeanCheck(MetricCheck):
     """
 
     _metric = Metric.MEAN
-    _diff_func = staticmethod(mean_diff_ci)
-    _value_func = staticmethod(np.mean)
+    _statistic_func = staticmethod(np.mean)
+    _analytical_func = staticmethod(analytical_mean_diff_ci)
 
 
 class RateCheck(MetricCheck):
@@ -365,8 +365,8 @@ class RateCheck(MetricCheck):
     """
 
     _metric = Metric.RATE
-    _diff_func = staticmethod(rate_diff_ci)
-    _value_func = staticmethod(np.mean)
+    _statistic_func = staticmethod(np.mean)
+    _analytical_func = staticmethod(analytical_rate_diff_ci)
 
     def _validate_values(self) -> None:
         assert_binary_values(self._before_values, "before")
@@ -391,9 +391,7 @@ class MedianCheck(MetricCheck):
     """
 
     _metric = Metric.MEDIAN
-    _diff_func = staticmethod(median_diff_ci)
-    _value_func = staticmethod(np.median)
-    _default_method = "bootstrap"
+    _statistic_func = staticmethod(np.median)
 
 
 MetricCheckT = TypeVar("MetricCheckT", bound=MetricCheck)
