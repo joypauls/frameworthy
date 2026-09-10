@@ -1,6 +1,6 @@
-> ⚠️ WIP: All 0.1.x releases are unstable. 0.2.0 will be the first stable release.
+> ⚠️ WIP: All 0.1.x releases are unstable. 0.2.0 will be the first stable, production-ready release.
 
-> Releases >0.1.3 are functional and ready for use, but the API is subject to change.
+> Releases >0.1.3 are functional and ready for testing, but the API is still subject to change.
 
 # frameworthy
 
@@ -8,7 +8,7 @@
 [![PyPI pyversions](https://img.shields.io/pypi/pyversions/frameworthy.svg?x=1)](https://pypi.org/project/frameworthy/)
 [![codecov](https://codecov.io/gh/joypauls/frameworthy/branch/main/graph/badge.svg?token=npu0JtY8hc)](https://codecov.io/gh/joypauls/frameworthy)
 
-Lightweight statistical validation library for data changes.
+Lightweight statistical validation library for data changes. Built for engineers and scientists who need to validate data changes with statistical rigor. Works in data validation pipelines, in tests with assertions, or in exploratory settings with easily inspectable results.
 
 <div align="center"><img src="docs/public/banner.png" width="600"></div>
 
@@ -33,9 +33,11 @@ See `scripts/examples.py` for a few quick examples.
 import frameworthy as fw
 import polars as pl # or pandas
 
+# load your data if necessary
 before_df = pl.read_csv("before.csv")
 after_df = pl.read_csv("after.csv")
 
+# run a check
 result = (
     fw.check(after_df, before=before_df)
     .mean("column_name")
@@ -44,7 +46,7 @@ result = (
 
 # inspect the results
 print(result)
-# or raise on failure
+# or raise an exception on failure
 result.assert_passed()
 ```
 
@@ -94,3 +96,7 @@ To run the examples:
 uv run scripts/examples.py
 ```
 
+
+## License
+
+MIT, but attribution is appreciated.

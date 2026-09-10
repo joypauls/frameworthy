@@ -1,6 +1,6 @@
 """Confidence-interval estimators for a difference `after - before`.
 
-Split out from `_stats.py`: this module owns interval *computation*
+Split out from `_stats.py`: this module owns interval computation
 (Wilson/bootstrap/analytical mean and rate estimators, plus the shared
 `diff_ci` dispatcher); `_classify.py` owns turning a computed interval into
 a `Decision`. `check.py`'s `MetricCheck` subclasses call `diff_ci` directly
