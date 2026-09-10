@@ -1,3 +1,6 @@
+import functools
+
+import numpy as np
 import pytest
 from conftest import paired_mean_arrays, rate_array, unpaired_mean_arrays
 
@@ -101,6 +104,33 @@ def _build_check(frame_factory, metric: str, paired: bool, before, after):
         check_ = fw.check(after_df, before=before_df)
 
     return getattr(check_, metric)(column)
+
+
+def _build_custom_check(
+    frame_factory,
+    paired: bool,
+    before,
+    after,
+    *,
+    statistic_func=np.mean,
+    name: str = "custom_metric",
+):
+    """Build a `CustomCheck` from raw `before`/`after` arrays, mirroring
+    `_build_check` above but going through `.custom()` instead of a
+    metric-named method.
+    """
+    column = "revenue"
+    if paired:
+        ids = list(range(len(before)))
+        before_df = frame_factory({"id": ids, column: before})
+        after_df = frame_factory({"id": ids, column: after})
+        check_ = fw.check(after_df, before=before_df, paired_by="id")
+    else:
+        before_df = frame_factory({column: before})
+        after_df = frame_factory({column: after})
+        check_ = fw.check(after_df, before=before_df)
+
+    return check_.custom(column, statistic_func, name)
 
 
 class TestCheckConstruction:
@@ -305,6 +335,129 @@ class TestMedianSpecific:
             claim(check_)
 
 
+class TestCustomSpecific:
+    """Behavior unique to `CustomCheck`: unlike every built-in metric,
+    there's no `method` kwarg at all (bootstrap is the only option), and
+    `name`/`statistic_func` are validated eagerly at construction time.
+
+    Verdict coverage reuses the existing `EQUIVALENT_ARRAYS`/
+    `CHANGED_ARRAYS["mean", ...]` fixtures with `statistic_func=np.mean`,
+    since a mean-difference bootstrap CI on the same tuned arrays lands on
+    the same verdicts as `MeanCheck`'s own bootstrap path -- no need to
+    invent new arrays just to prove the plumbing works.
+    """
+
+    def test_is_always_bootstrap(self, frame_factory):
+        before, after = EQUIVALENT_ARRAYS["mean", True]
+        result = _build_custom_check(frame_factory, True, before, after).equivalent(
+            within=MARGIN["mean"]
+        )
+
+        assert result.n_resamples > 0
+
+    @pytest.mark.parametrize(
+        "claim",
+        [
+            lambda check_: check_.equivalent(within=5.0, method="bootstrap"),
+            lambda check_: check_.change_greater_than(-5.0, method="bootstrap"),
+            lambda check_: check_.change_less_than(5.0, method="bootstrap"),
+        ],
+        ids=["equivalent", "change_greater_than", "change_less_than"],
+    )
+    def test_claim_methods_do_not_accept_a_method_kwarg(self, frame_factory, claim):
+        before, after = EQUIVALENT_ARRAYS["mean", True]
+        check_ = _build_custom_check(frame_factory, True, before, after)
+
+        with pytest.raises(TypeError, match="method"):
+            claim(check_)
+
+    def test_equivalent_within_margin(self, frame_factory):
+        before, after = EQUIVALENT_ARRAYS["mean", True]
+        result = _build_custom_check(frame_factory, True, before, after).equivalent(
+            within=MARGIN["mean"], random_state=0
+        )
+
+        assert result.decision == "passed"
+
+    def test_changed_beyond_margin(self, frame_factory):
+        before, after = CHANGED_ARRAYS["mean", True]
+        result = _build_custom_check(frame_factory, True, before, after).equivalent(
+            within=MARGIN["mean"], random_state=0
+        )
+
+        assert result.decision == "failed"
+
+    def test_supports_a_genuinely_custom_statistic(self, frame_factory):
+        # not just `np.mean` wearing a `.custom()` costume: a statistic no
+        # built-in check offers, bound via `functools.partial` since a
+        # plain `lambda x: np.percentile(x, 95)` wouldn't accept `axis=`.
+        rng = np.random.default_rng(0)
+        before = rng.normal(100.0, 5.0, size=300)
+        after = before + 3.0  # constant shift, comfortably inside margin
+
+        p95 = functools.partial(np.percentile, q=95)
+        check_ = _build_custom_check(
+            frame_factory,
+            False,
+            before,
+            after,
+            statistic_func=p95,
+            name="p95_latency",
+        )
+        result = check_.equivalent(within=10.0, n_resamples=2000, random_state=0)
+
+        assert result.metric == "p95_latency"
+        assert result.before_value == pytest.approx(np.percentile(before, 95))
+        assert result.after_value == pytest.approx(np.percentile(after, 95))
+        assert result.decision == "passed"
+
+    def test_custom_name_shows_up_in_str(self, frame_factory):
+        before, after = EQUIVALENT_ARRAYS["mean", True]
+        check_ = _build_custom_check(
+            frame_factory, True, before, after, name="p95_latency"
+        )
+
+        result = check_.equivalent(within=MARGIN["mean"], random_state=0)
+
+        assert "p95_latency(revenue)" in str(result)
+        assert "pp" not in str(result)  # a plain str metric is never a proportion
+
+    def test_rejects_empty_name(self, frame_factory):
+        before, after = EQUIVALENT_ARRAYS["mean", True]
+
+        with pytest.raises(fw.UsageError, match="`name`"):
+            _build_custom_check(frame_factory, True, before, after, name="")
+
+    def test_rejects_non_callable_statistic_func(self, frame_factory):
+        before, after = EQUIVALENT_ARRAYS["mean", True]
+
+        with pytest.raises(fw.UsageError, match="`statistic_func`"):
+            _build_custom_check(
+                frame_factory, True, before, after, statistic_func="not callable"
+            )
+
+    def test_rejects_statistic_func_without_axis_support(self, frame_factory):
+        before, after = EQUIVALENT_ARRAYS["mean", True]
+
+        def p95(values):
+            return np.percentile(values, 95)
+
+        with pytest.raises(fw.UsageError, match="axis"):
+            _build_custom_check(frame_factory, True, before, after, statistic_func=p95)
+
+    def test_rejects_statistic_func_that_does_not_return_a_scalar(self, frame_factory):
+        before, after = EQUIVALENT_ARRAYS["mean", True]
+
+        with pytest.raises(fw.UsageError, match="single scalar"):
+            _build_custom_check(
+                frame_factory,
+                True,
+                before,
+                after,
+                statistic_func=lambda x, axis=None: x,
+            )
+
+
 class TestEquivalent:
     """Verdict coverage for `.equivalent()`, across both built-in metrics
     and both pairing modes. Each case's `(before, after)` arrays are
@@ -352,7 +505,7 @@ class TestEquivalent:
 
 
 class TestChangeGreaterThan:
-    """Verdict coverage for `.change_greater_than()` (ruling out a drop),
+    """Decision coverage for `.change_greater_than()` (ruling out a drop),
     across both built-in metrics. Uses paired data, mirroring the
     "same customers, before vs. after" scenario this claim targets.
     """
@@ -521,3 +674,40 @@ class TestInferenceOptions:
 
         with pytest.raises(fw.UsageError, match="alpha"):
             check_.equivalent(within=5.0, alpha=0.6)
+
+
+class TestArrayCheck:
+    """`ArrayCheck`/`check_arrays()`: the array-input counterpart to
+    `Check`/`check()`, always unpaired. Only `.custom()` is covered here in
+    detail (mirroring `TestCustomSpecific` above); `.mean()`/`.rate()`/
+    `.median()` just construct the same `MeanCheck`/`RateCheck`/
+    `MedianCheck` classes already covered via `Check`.
+    """
+
+    def test_mean_matches_check_result(self):
+        before, after = EQUIVALENT_ARRAYS["mean", False]
+
+        result = fw.check_arrays(after, before).mean().equivalent(within=MARGIN["mean"])
+
+        assert result.paired is False
+        assert result.decision == "passed"
+
+    def test_custom_compares_a_user_supplied_statistic(self):
+        before, after = EQUIVALENT_ARRAYS["mean", False]
+
+        result = (
+            fw.check_arrays(after, before)
+            .custom(np.mean, name="array_mean")
+            .equivalent(within=MARGIN["mean"], random_state=0)
+        )
+
+        assert result.metric == "array_mean"
+        assert result.paired is False
+        assert result.decision == "passed"
+        assert result.n_resamples > 0
+
+    def test_custom_rejects_empty_name(self):
+        before, after = EQUIVALENT_ARRAYS["mean", False]
+
+        with pytest.raises(fw.UsageError, match="`name`"):
+            fw.check_arrays(after, before).custom(np.mean, name="")
