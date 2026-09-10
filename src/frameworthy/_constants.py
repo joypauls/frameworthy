@@ -1,7 +1,5 @@
 from enum import Enum
-from typing import Literal, NamedTuple, Protocol
-
-import numpy as np
+from typing import Literal, NamedTuple
 
 NULL_KEY = object()
 
@@ -48,23 +46,3 @@ class Interval(NamedTuple):
     diff: float
     low: float
     high: float
-
-
-class DiffCIFunc(Protocol):
-    """Shared call signature for `<metric>_diff_ci`: given
-    paired or independent `before`/`after` arrays, estimate the difference
-    `after - before` and its confidence interval under the given inference
-    `method`.
-    """
-
-    def __call__(
-        self,
-        before: np.ndarray,
-        after: np.ndarray,
-        *,
-        paired: bool,
-        alpha: float,
-        n_resamples: int,
-        rng: np.random.Generator,
-        method: InferenceMethod = ...,
-    ) -> Interval: ...

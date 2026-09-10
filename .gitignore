@@ -3,6 +3,7 @@ docs/.vitepress/cache
 DESIGN.md
 VISION.md
 AGENTS.md
+_ideas/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
