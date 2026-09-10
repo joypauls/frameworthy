@@ -63,6 +63,8 @@ class TestPassed:
 
 
 class TestStr:
+    """String representation tests for EquivalenceResult and ChangeResult."""
+
     def test_includes_key_details(self):
         result = _make_result(
             Decision.PASSED,
@@ -116,6 +118,24 @@ class TestStr:
         result = _make_result(Decision.PASSED, metric=Metric.MEAN)
         text = str(result)
 
+        assert "pp" not in text
+        assert "before =" not in text
+        assert "after =" not in text
+
+    def test_custom_str_metric_renders_in_raw_units(self):
+        # `.custom()` checks use a plain `str` `name` (not a `Metric`
+        # member) for this field; formatting must not crash on
+        # `metric.value`/`metric.is_proportion` and must fall back to raw
+        # units, same as `Metric.MEAN` above.
+        result = _make_result(
+            Decision.PASSED,
+            metric="p95_latency",
+            before_value=100.0,
+            after_value=101.0,
+        )
+        text = str(result)
+
+        assert "p95_latency(revenue)" in text
         assert "pp" not in text
         assert "before =" not in text
         assert "after =" not in text
