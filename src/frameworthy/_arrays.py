@@ -3,8 +3,13 @@ from collections.abc import Sequence
 import narwhals.stable.v2 as nw
 import numpy as np
 
-from ._errors import ColumnNotFoundError, InsufficientDataError, InvalidColumnDataError
+from ._errors import ColumnNotFoundError, InvalidDataError, UsageError
 from ._pairing import join_paired
+
+
+def assert_1d(values: np.ndarray, label: str) -> None:
+    if values.ndim != 1:
+        raise UsageError(f"`{label}` must be a 1-D array, got shape {values.shape}.")
 
 
 def assert_column_exists(columns: Sequence[str], column: str, label: str) -> None:
@@ -14,9 +19,9 @@ def assert_column_exists(columns: Sequence[str], column: str, label: str) -> Non
 
 def assert_min_count(n: int, min_count: int, label: str) -> None:
     if n == 0:
-        raise InsufficientDataError(f"No usable (non-null) values found for {label}.")
+        raise InvalidDataError(f"No usable (non-null) values found for {label}.")
     if n < min_count:
-        raise InsufficientDataError(
+        raise InvalidDataError(
             f"At least {min_count} usable (non-null) values are required for "
             f"{label}, got {n}."
         )
@@ -33,7 +38,7 @@ def assert_binary_values(values: np.ndarray, label: str) -> None:
     is_binary = np.isin(values, [0.0, 1.0])
     if not np.all(is_binary):
         bad_value = values[~is_binary][0]
-        raise InvalidColumnDataError(
+        raise InvalidDataError(
             f"`.rate()` requires {label} values to be binary (0/1 or "
             f"boolean), got a non-binary value: {bad_value!r}."
         )
@@ -43,7 +48,7 @@ def assert_equal_pairs(
     before_values: np.ndarray, after_values: np.ndarray, label: str
 ) -> None:
     if len(before_values) != len(after_values):
-        raise InvalidColumnDataError(
+        raise InvalidDataError(
             f"Paired comparison for {label} produced unequal numbers of usable "
             f"before ({len(before_values)}) and after ({len(after_values)}) "
             "values; before/after values must stay aligned pair-by-pair."
@@ -109,6 +114,29 @@ def values_from_two_frames(
 
     before_values = before_frame.select(column).drop_nulls()[column].to_numpy()
     after_values = after_frame.select(column).drop_nulls()[column].to_numpy()
+
+    assert_min_count(len(before_values), 2, "before")
+    assert_min_count(len(after_values), 2, "after")
+    return before_values, after_values, False
+
+
+def values_from_two_arrays(
+    before: np.ndarray, after: np.ndarray
+) -> tuple[np.ndarray, np.ndarray, bool]:
+    """Extract usable (non-NaN) values from two independent numpy arrays.
+
+    Mirrors the unpaired branch of `values_from_two_frames`: NaNs are
+    dropped independently on each side, since arrays (unlike `paired_by`
+    dataframes) have no key to align pairs by. Returns
+    `(before_values, after_values, paired)` with `paired` always `False`.
+    """
+    before_values = np.asarray(before, dtype=float)
+    after_values = np.asarray(after, dtype=float)
+    assert_1d(before_values, "before")
+    assert_1d(after_values, "after")
+
+    before_values = before_values[~np.isnan(before_values)]
+    after_values = after_values[~np.isnan(after_values)]
 
     assert_min_count(len(before_values), 2, "before")
     assert_min_count(len(after_values), 2, "after")

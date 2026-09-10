@@ -2,19 +2,14 @@ import numpy as np
 import pytest
 from scipy import stats as scipy_stats
 
-from frameworthy._errors import (
-    InsufficientDataError,
-    InvalidColumnDataError,
-    InvalidParameterError,
-)
+from frameworthy._errors import InvalidDataError, UsageError
 from frameworthy._intervals import (
     analytical_mean_diff_ci,
     analytical_rate_diff_ci,
     bootstrap_diff_ci,
+    diff_ci,
     independent_rate_diff_ci,
-    mean_diff_ci,
     paired_rate_diff_ci,
-    rate_diff_ci,
     wilson_interval,
 )
 
@@ -40,7 +35,7 @@ class TestBootstrapDiffCi:
 
     def test_paired_requires_equal_length(self):
         rng = np.random.default_rng(0)
-        with pytest.raises(InvalidColumnDataError, match="same length"):
+        with pytest.raises(InvalidDataError, match="same length"):
             bootstrap_diff_ci(
                 np.array([1.0, 2.0]),
                 np.array([1.0, 2.0, 3.0]),
@@ -52,7 +47,7 @@ class TestBootstrapDiffCi:
 
     def test_paired_requires_at_least_two_observations(self):
         rng = np.random.default_rng(0)
-        with pytest.raises(InsufficientDataError, match="At least 2"):
+        with pytest.raises(InvalidDataError, match="At least 2"):
             bootstrap_diff_ci(
                 np.array([1.0]),
                 np.array([2.0]),
@@ -98,7 +93,7 @@ class TestBootstrapDiffCi:
 
     def test_unpaired_requires_at_least_two_observations_per_side(self):
         rng = np.random.default_rng(0)
-        with pytest.raises(InsufficientDataError, match="At least 2"):
+        with pytest.raises(InvalidDataError, match="At least 2"):
             bootstrap_diff_ci(
                 np.array([1.0]),
                 np.array([2.0, 3.0]),
@@ -130,6 +125,43 @@ class TestBootstrapDiffCi:
         )
 
         assert result_a == result_b
+
+    def test_paired_with_median_statistic_func_recovers_known_constant_shift(self):
+        rng = np.random.default_rng(0)
+        before = np.array([10.0, 20.0, 30.0, 40.0, 50.0])
+        after = before + 1.0  # constant shift, zero variance in diffs
+
+        observed, ci_low, ci_high = bootstrap_diff_ci(
+            before,
+            after,
+            paired=True,
+            alpha=0.05,
+            n_resamples=1000,
+            rng=rng,
+            statistic_func=np.median,
+        )
+
+        assert observed == pytest.approx(1.0)
+        assert ci_low == pytest.approx(1.0)
+        assert ci_high == pytest.approx(1.0)
+
+    def test_unpaired_with_median_statistic_func_recovers_known_difference(self):
+        rng = np.random.default_rng(0)
+        before = rng.normal(loc=10.0, scale=1.0, size=500)
+        after = rng.normal(loc=13.0, scale=1.0, size=600)
+
+        observed, ci_low, ci_high = bootstrap_diff_ci(
+            before,
+            after,
+            paired=False,
+            alpha=0.05,
+            n_resamples=2000,
+            rng=rng,
+            statistic_func=np.median,
+        )
+
+        assert observed == pytest.approx(3.0, abs=0.3)
+        assert ci_low < observed < ci_high
 
 
 class TestAnalyticalMeanDiffCi:
@@ -163,7 +195,7 @@ class TestAnalyticalMeanDiffCi:
         assert ci_high == pytest.approx(ref_ci.high)
 
     def test_paired_requires_equal_length(self):
-        with pytest.raises(InvalidColumnDataError, match="same length"):
+        with pytest.raises(InvalidDataError, match="same length"):
             analytical_mean_diff_ci(
                 np.array([1.0, 2.0]),
                 np.array([1.0, 2.0, 3.0]),
@@ -172,7 +204,7 @@ class TestAnalyticalMeanDiffCi:
             )
 
     def test_paired_requires_at_least_two_observations(self):
-        with pytest.raises(InsufficientDataError, match="At least 2"):
+        with pytest.raises(InvalidDataError, match="At least 2"):
             analytical_mean_diff_ci(
                 np.array([1.0]), np.array([2.0]), paired=True, alpha=0.05
             )
@@ -218,7 +250,7 @@ class TestAnalyticalMeanDiffCi:
         assert ci_low <= ci_high
 
     def test_unpaired_requires_at_least_two_observations_per_side(self):
-        with pytest.raises(InsufficientDataError, match="At least 2"):
+        with pytest.raises(InvalidDataError, match="At least 2"):
             analytical_mean_diff_ci(
                 np.array([1.0]), np.array([2.0, 3.0]), paired=False, alpha=0.05
             )
@@ -283,27 +315,22 @@ class TestAnalyticalMeanDiffCi:
         assert analytical[2] == pytest.approx(bootstrap[2], abs=0.3)
 
 
-class TestMeanDiffCiDispatcher:
-    def test_default_method_is_analytical(self):
+class TestDiffCiDispatcher:
+    """`diff_ci` is the single dispatch point every `MetricCheck` subclass
+    (built-in or custom) calls directly with its own `analytical_func`/
+    `statistic_func`, so it's tested generically here rather than once per
+    metric via now-removed `mean_diff_ci`/`rate_diff_ci`/`median_diff_ci`
+    wrappers -- the per-metric analytical estimators themselves are still
+    covered by `TestAnalyticalMeanDiffCi`/`TestAnalyticalRateDiffCi`, and
+    the metric-level defaulting/rejection behavior is covered end-to-end in
+    `test_check.py`.
+    """
+
+    def test_method_analytical_calls_analytical_func(self):
         before = np.array([10.0, 20.0, 30.0])
         after = before + 1.0
 
-        result = mean_diff_ci(
-            before,
-            after,
-            paired=True,
-            alpha=0.05,
-            n_resamples=100,
-            rng=np.random.default_rng(0),
-        )
-
-        assert result == analytical_mean_diff_ci(before, after, paired=True, alpha=0.05)
-
-    def test_method_analytical_matches_direct_call(self):
-        before = np.array([10.0, 20.0, 30.0])
-        after = before + 1.0
-
-        result = mean_diff_ci(
+        result = diff_ci(
             before,
             after,
             paired=True,
@@ -311,6 +338,7 @@ class TestMeanDiffCiDispatcher:
             n_resamples=100,
             rng=np.random.default_rng(0),
             method="analytical",
+            analytical_func=analytical_mean_diff_ci,
         )
 
         assert result == analytical_mean_diff_ci(before, after, paired=True, alpha=0.05)
@@ -319,7 +347,7 @@ class TestMeanDiffCiDispatcher:
         before = np.array([10.0, 20.0, 30.0, 40.0])
         after = np.array([11.0, 19.0, 33.0, 42.0])
 
-        result = mean_diff_ci(
+        result = diff_ci(
             before,
             after,
             paired=True,
@@ -327,6 +355,7 @@ class TestMeanDiffCiDispatcher:
             n_resamples=500,
             rng=np.random.default_rng(42),
             method="bootstrap",
+            statistic_func=np.mean,
         )
         expected = bootstrap_diff_ci(
             before,
@@ -339,12 +368,28 @@ class TestMeanDiffCiDispatcher:
 
         assert result == expected
 
+    def test_method_analytical_raises_usage_error_when_no_analytical_func(self):
+        before = np.array([10.0, 20.0, 30.0])
+        after = before + 1.0
+
+        with pytest.raises(UsageError, match="no closed-form"):
+            diff_ci(
+                before,
+                after,
+                paired=True,
+                alpha=0.05,
+                n_resamples=100,
+                rng=np.random.default_rng(0),
+                method="analytical",
+                analytical_func=None,
+            )
+
     def test_rejects_unknown_method(self):
         before = np.array([10.0, 20.0, 30.0])
         after = before + 1.0
 
-        with pytest.raises(InvalidParameterError, match="Unknown inference"):
-            mean_diff_ci(
+        with pytest.raises(UsageError, match="Unknown inference"):
+            diff_ci(
                 before,
                 after,
                 paired=True,
@@ -352,6 +397,8 @@ class TestMeanDiffCiDispatcher:
                 n_resamples=100,
                 rng=np.random.default_rng(0),
                 method="magic",
+                analytical_func=analytical_mean_diff_ci,
+                statistic_func=np.mean,
             )
 
 
@@ -369,11 +416,11 @@ class TestWilsonInterval:
         assert high == pytest.approx(ref.high)
 
     def test_rejects_non_positive_n(self):
-        with pytest.raises(InvalidParameterError, match="`n`"):
+        with pytest.raises(UsageError, match="`n`"):
             wilson_interval(0, 0, alpha=0.05)
 
     def test_rejects_count_out_of_range(self):
-        with pytest.raises(InvalidParameterError, match="`count`"):
+        with pytest.raises(UsageError, match="`count`"):
             wilson_interval(11, 10, alpha=0.05)
 
 
@@ -425,7 +472,7 @@ class TestIndependentRateDiffCi:
         assert ci_low < 0.0 < ci_high
 
     def test_requires_at_least_two_observations_per_side(self):
-        with pytest.raises(InsufficientDataError, match="At least 2"):
+        with pytest.raises(InvalidDataError, match="At least 2"):
             independent_rate_diff_ci(np.array([1.0]), np.array([1.0, 0.0]), alpha=0.05)
 
 
@@ -480,13 +527,13 @@ class TestPairedRateDiffCi:
         assert ci_high > 0.0
 
     def test_requires_equal_length(self):
-        with pytest.raises(InvalidColumnDataError, match="same length"):
+        with pytest.raises(InvalidDataError, match="same length"):
             paired_rate_diff_ci(
                 np.array([1.0, 0.0, 1.0]), np.array([1.0, 0.0]), alpha=0.05
             )
 
     def test_requires_at_least_two_pairs(self):
-        with pytest.raises(InsufficientDataError, match="At least 2"):
+        with pytest.raises(InvalidDataError, match="At least 2"):
             paired_rate_diff_ci(np.array([1.0]), np.array([0.0]), alpha=0.05)
 
 
@@ -506,59 +553,3 @@ class TestAnalyticalRateDiffCi:
         result = analytical_rate_diff_ci(before, after, paired=False, alpha=0.05)
 
         assert result == independent_rate_diff_ci(before, after, alpha=0.05)
-
-
-class TestRateDiffCiDispatcher:
-    def test_default_method_is_analytical(self):
-        before = np.array([1.0, 0.0, 1.0, 0.0, 1.0, 1.0])
-        after = np.array([1.0, 1.0, 1.0, 0.0, 0.0, 1.0])
-
-        result = rate_diff_ci(
-            before,
-            after,
-            paired=True,
-            alpha=0.05,
-            n_resamples=100,
-            rng=np.random.default_rng(0),
-        )
-
-        assert result == analytical_rate_diff_ci(before, after, paired=True, alpha=0.05)
-
-    def test_method_bootstrap_matches_direct_call(self):
-        before = np.array([1.0, 0.0, 1.0, 0.0, 1.0, 1.0])
-        after = np.array([1.0, 1.0, 1.0, 0.0, 0.0, 1.0])
-
-        result = rate_diff_ci(
-            before,
-            after,
-            paired=True,
-            alpha=0.05,
-            n_resamples=500,
-            rng=np.random.default_rng(42),
-            method="bootstrap",
-        )
-        expected = bootstrap_diff_ci(
-            before,
-            after,
-            paired=True,
-            alpha=0.05,
-            n_resamples=500,
-            rng=np.random.default_rng(42),
-        )
-
-        assert result == expected
-
-    def test_rejects_unknown_method(self):
-        before = np.array([1.0, 0.0, 1.0])
-        after = np.array([1.0, 1.0, 0.0])
-
-        with pytest.raises(InvalidParameterError, match="Unknown inference"):
-            rate_diff_ci(
-                before,
-                after,
-                paired=True,
-                alpha=0.05,
-                n_resamples=100,
-                rng=np.random.default_rng(0),
-                method="magic",
-            )

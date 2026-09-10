@@ -8,6 +8,10 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12", "3.13", "3.14"]
 
     steps:
       - name: Check out repo
@@ -17,10 +21,10 @@ jobs:
         uses: astral-sh/setup-uv@v6
 
       - name: Set up Python
-        run: uv python install 3.11
+        run: uv python install ${{ matrix.python-version }}
 
       - name: Install dependencies
-        run: uv sync --dev
+        run: uv sync --dev -p ${{ matrix.python-version }}
 
       - name: Run tests with coverage
         run: make test-cov-ci

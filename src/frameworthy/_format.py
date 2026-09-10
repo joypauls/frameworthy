@@ -1,49 +1,65 @@
 """Unit-aware formatting for `ComparisonResult.__str__`.
 
-Centralizes the pp-vs-native-units decision (driven by `Statistic.is_proportion`)
+Centralizes the pp-vs-native-units decision
 in one place, rather than each result class re-implementing its own
-`if statistic == "rate"` branch.
+`if metric == "rate"` branch.
 """
 
-from ._constants import Statistic
+from ._constants import Metric
 
 
-def format_value(value: float, statistic: Statistic) -> str:
+def _is_proportion(metric: Metric | str) -> bool:
+    """Whether `metric` should be rendered in percentage points.
+
+    Only built-in `Metric` members opt into this; a plain `str` metric
+    (a `.custom()` check's `name`) always renders in raw units.
+    """
+    return isinstance(metric, Metric) and metric == Metric.RATE
+
+
+def metric_label(metric: Metric | str) -> str:
+    """The display name for `metric`: a `Metric` member's `.value` (e.g.
+    `"mean"`), or the string itself for a `.custom()` check's `name`.
+    """
+    return metric.value if isinstance(metric, Metric) else metric
+
+
+def format_value(value: float, metric: Metric | str) -> str:
     """Format a signed value (a diff, bound, or threshold) in the
-    statistic's natural unit: percentage points for proportions, raw units
+    metric's natural unit: percentage points for proportions, raw units
     otherwise.
     """
-    if statistic.is_proportion:
+    if _is_proportion(metric):
         return f"{value * 100:+.4g}pp"
     return f"{value:+.4g}"
 
 
-def format_margin(value: float, statistic: Statistic) -> str:
+def format_margin(value: float, metric: Metric | str) -> str:
     """Format an unsigned `±` margin (e.g. an equivalence `within`) in the
-    statistic's natural unit.
+    metric's natural unit.
     """
-    if statistic.is_proportion:
+    if _is_proportion(metric):
         return f"±{value * 100:g}pp"
     return f"±{value:g}"
 
 
-def format_level(value: float, statistic: Statistic) -> str:
-    """Format an absolute level (e.g. `before_mean`/`after_mean`) in the
-    statistic's natural unit.
+def format_point_value(value: float, metric: Metric | str) -> str:
+    """Format an absolute point value (e.g. `before_value`/`after_value`)
+    in the metric's natural unit.
     """
-    if statistic.is_proportion:
+    if _is_proportion(metric):
         return f"{value:.1%}"
     return f"{value:.4g}"
 
 
-def format_levels(before: float, after: float, statistic: Statistic) -> str:
+def format_point_values(before: float, after: float, metric: Metric | str) -> str:
     """Format the `before = ..., after = ..., ` prefix shown for
-    proportions (where the absolute level is useful context alongside the
-    diff), or an empty string for statistics that don't need it.
+    proportions (where the absolute point value is useful context alongside
+    the diff), or an empty string for metrics that don't need it.
     """
-    if not statistic.is_proportion:
+    if not _is_proportion(metric):
         return ""
     return (
-        f"before = {format_level(before, statistic)}, "
-        f"after = {format_level(after, statistic)}, "
+        f"before = {format_point_value(before, metric)}, "
+        f"after = {format_point_value(after, metric)}, "
     )

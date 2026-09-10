@@ -4,14 +4,13 @@ from enum import Enum
 class Decision(str, Enum):
     """Classification decision for equivalence and directional change checks.
 
-    `EQUIVALENT`/`CHANGED` are produced by equivalence checks (`.equivalent()`);
-    `PASSED`/`FAILED` are produced by directional change checks
-    (`.change_greater_than()`/`.change_less_than()`). `INCONCLUSIVE` is shared
-    by both: the available data can't establish the requested claim either way.
+    Shared by both equivalence checks (`.equivalent()`) and directional
+    change checks (`.change_greater_than()`/`.change_less_than()`):
+    `PASSED` if the evidence supports the claim being tested, `FAILED` if it
+    supports the opposite, and `INCONCLUSIVE` if the available data can't
+    establish the claim either way.
     """
 
-    EQUIVALENT = "equivalent"
-    CHANGED = "changed"
     PASSED = "passed"
     FAILED = "failed"
     INCONCLUSIVE = "inconclusive"

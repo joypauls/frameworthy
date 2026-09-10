@@ -1,18 +1,18 @@
 import pytest
 
 from frameworthy._classify import classify_change_bound, classify_equivalence
-from frameworthy._errors import InvalidParameterError
+from frameworthy._errors import UsageError
 
 
 class TestClassifyEquivalence:
     def test_equivalent_when_ci_fully_inside_margin(self):
-        assert classify_equivalence(-1.0, 1.0, within=2.0) == "equivalent"
+        assert classify_equivalence(-1.0, 1.0, within=2.0) == "passed"
 
     def test_changed_when_ci_fully_outside_margin_above(self):
-        assert classify_equivalence(3.0, 5.0, within=2.0) == "changed"
+        assert classify_equivalence(3.0, 5.0, within=2.0) == "failed"
 
     def test_changed_when_ci_fully_outside_margin_below(self):
-        assert classify_equivalence(-5.0, -3.0, within=2.0) == "changed"
+        assert classify_equivalence(-5.0, -3.0, within=2.0) == "failed"
 
     def test_inconclusive_when_ci_straddles_upper_margin(self):
         assert classify_equivalence(1.0, 3.0, within=2.0) == "inconclusive"
@@ -24,7 +24,7 @@ class TestClassifyEquivalence:
         assert classify_equivalence(-5.0, 5.0, within=2.0) == "inconclusive"
 
     def test_rejects_non_positive_within(self):
-        with pytest.raises(InvalidParameterError, match="within"):
+        with pytest.raises(UsageError, match="within"):
             classify_equivalence(-1.0, 1.0, within=0.0)
 
 
@@ -54,5 +54,5 @@ class TestClassifyChangeBound:
         assert result == "inconclusive"
 
     def test_rejects_unknown_direction(self):
-        with pytest.raises(InvalidParameterError, match="direction"):
+        with pytest.raises(UsageError, match="direction"):
             classify_change_bound(-1.0, 1.0, 0.0, direction="sideways")

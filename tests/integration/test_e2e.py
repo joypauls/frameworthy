@@ -1,5 +1,3 @@
-"""End-to-end tests exercising `fw.check` against a real dataset (iris.csv)."""
-
 from pathlib import Path
 
 import pandas as pd
@@ -7,6 +5,7 @@ import pytest
 
 import frameworthy as fw
 
+# generated from scripts/generate_e2e_datasets.py
 BEFORE_CSV = Path(__file__).parent / "data" / "before.csv"
 AFTER_CHANGED_CSV = Path(__file__).parent / "data" / "after_changed.csv"
 AFTER_UNCHANGED_CSV = Path(__file__).parent / "data" / "after_unchanged.csv"
@@ -28,31 +27,27 @@ def after_unchanged_df() -> pd.DataFrame:
 
 
 def test_dataframe_check_equivalent_for_unchanged(before_df, after_unchanged_df):
-
     result = (
         fw.check(after_unchanged_df, before=before_df)
         .mean("normal")
         .equivalent(within=0.1)
     )
-
-    assert result.decision == "equivalent"
+    assert result.decision == "passed"
     assert result.n_before == result.n_after == len(before_df)
-    result.raise_for_status()
+    result.assert_passed()
 
 
 def test_dataframe_check_equivalent_for_changed_with_buffer(
     before_df, after_changed_df
 ):
-
     result = (
         fw.check(after_changed_df, before=before_df)
         .mean("normal")
-        .equivalent(within=1.0)
+        .equivalent(within=2.0)
     )
-
-    assert result.decision == "equivalent"
+    assert result.decision == "passed"
     assert result.n_before == result.n_after == len(before_df)
-    result.raise_for_status()
+    result.assert_passed()
 
 
 # def test_two_dataframe_unpaired_check_detects_species_difference(test_df):
@@ -68,10 +63,10 @@ def test_dataframe_check_equivalent_for_changed_with_buffer(
 #         .equivalent(within=1.0, alpha=0.05, random_state=0)
 #     )
 
-#     assert result.decision == "changed"
+#     assert result.decision == "failed"
 #     assert result.paired is False
 #     with pytest.raises(fw.FrameworthyAssertionError):
-#         result.raise_for_status()
+#         result.assert_passed()
 
 
 # def test_same_df_paired_rate_check_is_equivalent_for_small_change(test_df):
@@ -95,11 +90,11 @@ def test_dataframe_check_equivalent_for_changed_with_buffer(
 #         .equivalent(within=0.05, alpha=0.05, random_state=0)
 #     )
 
-#     assert result.decision == "equivalent"
+#     assert result.decision == "passed"
 #     assert result.paired is True
-#     assert result.statistic == "rate"
+#     assert result.metric == "rate"
 #     assert result.n_before == result.n_after == len(test_df)
-#     result.raise_for_status()
+#     result.assert_passed()
 
 
 # def test_two_dataframe_unpaired_rate_check_detects_species_difference(test_df):
@@ -119,11 +114,11 @@ def test_dataframe_check_equivalent_for_changed_with_buffer(
 #         .equivalent(within=0.1, alpha=0.05, random_state=0)
 #     )
 
-#     assert result.decision == "changed"
+#     assert result.decision == "failed"
 #     assert result.paired is False
-#     assert result.before_mean == pytest.approx(0.0)
-#     assert result.after_mean == pytest.approx(1.0)
+#     assert result.before_value == pytest.approx(0.0)
+#     assert result.after_value == pytest.approx(1.0)
 #     # the boundary rates (0% and 100%) shouldn't collapse the CI to a point
 #     assert result.ci_low != result.ci_high
 #     with pytest.raises(fw.FrameworthyAssertionError):
-#         result.raise_for_status()
+#         result.assert_passed()

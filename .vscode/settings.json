@@ -6,7 +6,7 @@
             // This fixes unused imports and other lint errors
             "source.fixAll.ruff": "explicit",
             // This automatically groups and sorts your imports (isort)
-            "source.organizeImports.ruff": "explicit"
+            "source.organizeImports.ruff": "never"
         }
   }
 }

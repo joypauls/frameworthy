@@ -1,10 +1,9 @@
 import warnings
 from dataclasses import dataclass
-from typing import ClassVar
 
-from ._constants import Direction, Statistic
+from ._constants import Direction, Metric
 from ._errors import FrameworthyAssertionError
-from ._format import format_levels, format_margin, format_value
+from ._format import format_margin, format_point_values, format_value, metric_label
 from .decision import Decision
 
 
@@ -14,7 +13,7 @@ class ComparisonResult:
 
     Not meant to be constructed or subclassed outside this module: it
     holds the fields, `pairing`/`levels` formatting, and `passed`/
-    `raise_for_status` logic common to both kinds of check, and defers to
+    `assert_passed` logic common to both kinds of check, and defers to
     `_claim_summary()` for the part of `__str__` that's specific to each
     (a two-sided CI + margin for equivalence, a one-sided bound + threshold
     for a directional change).
@@ -22,10 +21,10 @@ class ComparisonResult:
 
     decision: Decision
     column: str
-    statistic: Statistic
+    metric: Metric | str
     paired: bool
-    before_mean: float
-    after_mean: float
+    before_value: float
+    after_value: float
     diff: float
     ci_low: float
     ci_high: float
@@ -34,15 +33,10 @@ class ComparisonResult:
     n_after: int
     n_resamples: int
 
-    # declared by each subclass: which `Decision` means "evidence supports
-    # the claim" vs. "evidence supports the opposite of the claim"
-    _pass_decision: ClassVar[Decision]
-    _fail_decision: ClassVar[Decision]
-
     @property
     def passed(self) -> bool:
         """Whether the evidence supports the claim being tested."""
-        return self.decision == self._pass_decision
+        return self.decision == Decision.PASSED
 
     def _claim_summary(self) -> str:
         """The claim-specific middle portion of `__str__` (including its
@@ -56,22 +50,25 @@ class ComparisonResult:
             if self.paired
             else f"unpaired, n_before={self.n_before}, n_after={self.n_after}"
         )
-        levels = format_levels(self.before_mean, self.after_mean, self.statistic)
-        diff_str = format_value(self.diff, self.statistic)
+        point_values = format_point_values(
+            self.before_value, self.after_value, self.metric
+        )
+        diff_str = format_value(self.diff, self.metric)
 
         return (
-            f"{self.decision.value.upper()}: {self.statistic.value}({self.column}) "
-            f"{levels}"
+            f"{self.decision.value.upper()}: {metric_label(self.metric)}"
+            f"({self.column}) "
+            f"{point_values}"
             f"diff (after - before) = {diff_str}, "
             f"{self._claim_summary()}"
             f"alpha = {self.alpha:g}, {pairing}"
         )
 
-    def raise_for_status(self) -> None:
+    def assert_passed(self) -> None:
         """Raise if the evidence supports the opposite of the claim being
         tested; warn (but don't raise) if the evidence is inconclusive.
         """
-        if self.decision == self._fail_decision:
+        if self.decision == Decision.FAILED:
             raise FrameworthyAssertionError(str(self))
         if self.decision == Decision.INCONCLUSIVE:
             warnings.warn(str(self), stacklevel=2)
@@ -87,16 +84,13 @@ class EquivalenceResult(ComparisonResult):
 
     within: float
 
-    _pass_decision: ClassVar[Decision] = Decision.EQUIVALENT
-    _fail_decision: ClassVar[Decision] = Decision.CHANGED
-
     def _claim_summary(self) -> str:
         ci_pct = round((1 - 2 * self.alpha) * 100)
         ci_str = (
-            f"[{format_value(self.ci_low, self.statistic)}, "
-            f"{format_value(self.ci_high, self.statistic)}]"
+            f"[{format_value(self.ci_low, self.metric)}, "
+            f"{format_value(self.ci_high, self.metric)}]"
         )
-        margin_str = format_margin(self.within, self.statistic)
+        margin_str = format_margin(self.within, self.metric)
         return f"{ci_pct}% CI = {ci_str}, margin = {margin_str}, "
 
 
@@ -111,9 +105,6 @@ class ChangeResult(ComparisonResult):
     threshold: float
     direction: Direction
 
-    _pass_decision: ClassVar[Decision] = Decision.PASSED
-    _fail_decision: ClassVar[Decision] = Decision.FAILED
-
     def _claim_summary(self) -> str:
         # each CI endpoint is individually a (1 - alpha) one-sided bound, so
         # only the endpoint relevant to `direction` is reported
@@ -127,8 +118,8 @@ class ChangeResult(ComparisonResult):
             bound = self.ci_high
             method_name = "change_less_than"
 
-        bound_str = format_value(bound, self.statistic)
-        threshold_str = format_value(self.threshold, self.statistic)
+        bound_str = format_value(bound, self.metric)
+        threshold_str = format_value(self.threshold, self.metric)
         return (
             f"{bound_pct}% one-sided {bound_label} = {bound_str}, "
             f"threshold ({method_name}) = {threshold_str}, "

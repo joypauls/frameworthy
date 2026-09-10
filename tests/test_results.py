@@ -1,6 +1,6 @@
 import pytest
 
-from frameworthy._constants import Statistic
+from frameworthy._constants import Metric
 from frameworthy._errors import FrameworthyAssertionError
 from frameworthy.decision import Decision
 from frameworthy.results import ChangeResult, EquivalenceResult
@@ -10,10 +10,10 @@ def _make_result(decision: Decision, **overrides) -> EquivalenceResult:
     defaults = {
         "decision": decision,
         "column": "revenue",
-        "statistic": Statistic.MEAN,
+        "metric": Metric.MEAN,
         "paired": True,
-        "before_mean": 100.0,
-        "after_mean": 101.0,
+        "before_value": 100.0,
+        "after_value": 101.0,
         "diff": 1.0,
         "ci_low": -1.0,
         "ci_high": 3.0,
@@ -31,10 +31,10 @@ def _make_change_result(decision: Decision, **overrides) -> ChangeResult:
     defaults = {
         "decision": decision,
         "column": "latency_ms",
-        "statistic": Statistic.MEAN,
+        "metric": Metric.MEAN,
         "paired": True,
-        "before_mean": 100.0,
-        "after_mean": 105.0,
+        "before_value": 100.0,
+        "after_value": 105.0,
         "diff": 5.0,
         "ci_low": 1.0,
         "ci_high": 9.0,
@@ -53,8 +53,8 @@ class TestPassed:
     @pytest.mark.parametrize(
         "decision, expected",
         [
-            (Decision.EQUIVALENT, True),
-            (Decision.CHANGED, False),
+            (Decision.PASSED, True),
+            (Decision.FAILED, False),
             (Decision.INCONCLUSIVE, False),
         ],
     )
@@ -63,9 +63,11 @@ class TestPassed:
 
 
 class TestStr:
+    """String representation tests for EquivalenceResult and ChangeResult."""
+
     def test_includes_key_details(self):
         result = _make_result(
-            Decision.EQUIVALENT,
+            Decision.PASSED,
             ci_low=-1.0,
             ci_high=3.0,
             diff=1.0,
@@ -74,7 +76,7 @@ class TestStr:
         )
         text = str(result)
 
-        assert "EQUIVALENT" in text
+        assert "PASSED" in text
         assert "mean(revenue)" in text
         assert "+1" in text
         assert "90% CI" in text
@@ -83,7 +85,7 @@ class TestStr:
         assert "paired, n=50" in text
 
     def test_reports_unpaired_sample_sizes(self):
-        result = _make_result(Decision.CHANGED, paired=False, n_before=30, n_after=45)
+        result = _make_result(Decision.FAILED, paired=False, n_before=30, n_after=45)
         text = str(result)
 
         assert "unpaired" in text
@@ -92,10 +94,10 @@ class TestStr:
 
     def test_rate_formats_diff_and_margin_in_percentage_points(self):
         result = _make_result(
-            Decision.EQUIVALENT,
-            statistic=Statistic.RATE,
-            before_mean=0.40,
-            after_mean=0.45,
+            Decision.PASSED,
+            metric=Metric.RATE,
+            before_value=0.40,
+            after_value=0.45,
             diff=0.05,
             ci_low=-0.01,
             ci_high=0.03,
@@ -113,28 +115,43 @@ class TestStr:
         assert "0.005" not in text
 
     def test_mean_does_not_show_percentage_point_formatting(self):
-        result = _make_result(Decision.EQUIVALENT, statistic=Statistic.MEAN)
+        result = _make_result(Decision.PASSED, metric=Metric.MEAN)
         text = str(result)
 
         assert "pp" not in text
         assert "before =" not in text
         assert "after =" not in text
 
+    def test_custom_str_metric_renders_in_raw_units(self):
+        # `.custom()` checks use a plain `str` for `name` not `Metric`
+        result = _make_result(
+            Decision.PASSED,
+            metric="p95_latency",
+            before_value=100.0,
+            after_value=101.0,
+        )
+        text = str(result)
 
-class TestRaiseForStatus:
-    def test_equivalent_does_not_raise_or_warn(self, recwarn):
-        _make_result(Decision.EQUIVALENT).raise_for_status()
+        assert "p95_latency(revenue)" in text
+        assert "pp" not in text
+        assert "before =" not in text
+        assert "after =" not in text
+
+
+class TestAssertPassed:
+    def test_passed_does_not_raise_or_warn(self, recwarn):
+        _make_result(Decision.PASSED).assert_passed()
         assert len(recwarn) == 0
 
-    def test_changed_raises_frameworthy_assertion_error(self):
-        result = _make_result(Decision.CHANGED)
-        with pytest.raises(FrameworthyAssertionError, match="CHANGED"):
-            result.raise_for_status()
+    def test_failed_raises_frameworthy_assertion_error(self):
+        result = _make_result(Decision.FAILED)
+        with pytest.raises(FrameworthyAssertionError, match="FAILED"):
+            result.assert_passed()
 
     def test_inconclusive_warns_but_does_not_raise(self):
         result = _make_result(Decision.INCONCLUSIVE)
         with pytest.warns(UserWarning, match="INCONCLUSIVE"):
-            result.raise_for_status()
+            result.assert_passed()
 
 
 class TestChangeResultPassed:
@@ -184,9 +201,9 @@ class TestChangeResultStr:
             ci_low=-0.004,
             ci_high=0.001,
             threshold=-0.005,
-            statistic=Statistic.RATE,
-            before_mean=0.40,
-            after_mean=0.398,
+            metric=Metric.RATE,
+            before_value=0.40,
+            after_value=0.398,
         )
         text = str(result)
 
@@ -203,17 +220,17 @@ class TestChangeResultStr:
         assert "0.005" not in text
 
 
-class TestChangeResultRaiseForStatus:
+class TestChangeResultAssertPassed:
     def test_passed_does_not_raise_or_warn(self, recwarn):
-        _make_change_result(Decision.PASSED).raise_for_status()
+        _make_change_result(Decision.PASSED).assert_passed()
         assert len(recwarn) == 0
 
     def test_failed_raises_frameworthy_assertion_error(self):
         result = _make_change_result(Decision.FAILED)
         with pytest.raises(FrameworthyAssertionError, match="FAILED"):
-            result.raise_for_status()
+            result.assert_passed()
 
     def test_inconclusive_warns_but_does_not_raise(self):
         result = _make_change_result(Decision.INCONCLUSIVE)
         with pytest.warns(UserWarning, match="INCONCLUSIVE"):
-            result.raise_for_status()
+            result.assert_passed()

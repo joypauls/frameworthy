@@ -14,7 +14,7 @@ export default defineConfig({
 
   themeConfig: {
     nav: [
-      { text: "Guide", link: "/getting-started" },
+      { text: "Docs", link: "/getting-started" },
     //   { text: "API", link: "/api/" }
     ],
 
@@ -22,17 +22,16 @@ export default defineConfig({
       {
         text: "Guide",
         items: [
-          { text: "Home", link: "/" },
+          // { text: "Home", link: "/" },
           { text: "Getting Started", link: "/getting-started" }
         ]
       },
-      // {
-      //   text: "API",
-      //   items: [
-      //     { text: "Preserving Rows", link: "/assertions/preserves-rows" },
-      //     { text: "Preserving Keys", link: "/assertions/preserves-key" }
-      //   ]
-      // }
+      {
+        text: "Internals",
+        items: [
+          { text: "Methodology", link: "/methodology" }
+        ]
+      },
     ],
 
     socialLinks: [
