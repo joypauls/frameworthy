@@ -8,6 +8,7 @@ from frameworthy._errors import (
 from frameworthy.check import (
     ArrayCheck,
     Check,
+    CustomCheck,
     MeanCheck,
     MedianCheck,
     MetricCheck,
@@ -23,6 +24,7 @@ __all__ = [
     "ChangeResult",
     "Check",
     "ColumnNotFoundError",
+    "CustomCheck",
     "Decision",
     "EquivalenceResult",
     "FrameworthyAssertionError",

@@ -8,40 +8,57 @@ in one place, rather than each result class re-implementing its own
 from ._constants import Metric
 
 
-def format_value(value: float, metric: Metric) -> str:
+def _is_proportion(metric: Metric | str) -> bool:
+    """Whether `metric` should be rendered in percentage points.
+
+    Only built-in `Metric` members opt into this; a plain `str` metric
+    (a `.custom()` check's `name`) always renders in raw units, since
+    there's no general way to infer an arbitrary statistic's natural unit.
+    """
+    return isinstance(metric, Metric) and metric.is_proportion
+
+
+def metric_label(metric: Metric | str) -> str:
+    """The display name for `metric`: a `Metric` member's `.value` (e.g.
+    `"mean"`), or the string itself for a `.custom()` check's `name`.
+    """
+    return metric.value if isinstance(metric, Metric) else metric
+
+
+def format_value(value: float, metric: Metric | str) -> str:
     """Format a signed value (a diff, bound, or threshold) in the
     metric's natural unit: percentage points for proportions, raw units
     otherwise.
     """
-    if metric.is_proportion:
+    if _is_proportion(metric):
         return f"{value * 100:+.4g}pp"
     return f"{value:+.4g}"
 
 
-def format_margin(value: float, metric: Metric) -> str:
+def format_margin(value: float, metric: Metric | str) -> str:
     """Format an unsigned `±` margin (e.g. an equivalence `within`) in the
     metric's natural unit.
     """
-    if metric.is_proportion:
+    if _is_proportion(metric):
         return f"±{value * 100:g}pp"
     return f"±{value:g}"
 
 
-def format_point_value(value: float, metric: Metric) -> str:
+def format_point_value(value: float, metric: Metric | str) -> str:
     """Format an absolute point value (e.g. `before_value`/`after_value`)
     in the metric's natural unit.
     """
-    if metric.is_proportion:
+    if _is_proportion(metric):
         return f"{value:.1%}"
     return f"{value:.4g}"
 
 
-def format_point_values(before: float, after: float, metric: Metric) -> str:
+def format_point_values(before: float, after: float, metric: Metric | str) -> str:
     """Format the `before = ..., after = ..., ` prefix shown for
     proportions (where the absolute point value is useful context alongside
     the diff), or an empty string for metrics that don't need it.
     """
-    if not metric.is_proportion:
+    if not _is_proportion(metric):
         return ""
     return (
         f"before = {format_point_value(before, metric)}, "

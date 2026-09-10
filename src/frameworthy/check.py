@@ -28,7 +28,11 @@ from ._intervals import (
     diff_ci,
 )
 from ._pairing import _normalize_keys, assert_unique_keys
-from ._validation import InferenceConfig
+from ._validation import (
+    InferenceConfig,
+    validate_custom_metric,
+    validate_statistic_func,
+)
 from .results import ChangeResult, EquivalenceResult
 
 
@@ -36,7 +40,7 @@ def _equivalence_result(
     *,
     analytical_func: AnalyticalDiffFunc | None,
     statistic_func: StatisticFunc,
-    metric: Metric,
+    metric: Metric | str,
     column: str,
     paired: bool,
     before_values: np.ndarray,
@@ -88,7 +92,7 @@ def _change_result(
     *,
     analytical_func: AnalyticalDiffFunc | None,
     statistic_func: StatisticFunc,
-    metric: Metric,
+    metric: Metric | str,
     column: str,
     paired: bool,
     before_values: np.ndarray,
@@ -146,7 +150,8 @@ class MetricCheck:
     `.change_less_than()` exactly once, in terms of what each subclass
     declares:
 
-    * `_metric`: the `Metric` this check represents.
+    * `_metric`: the `Metric` this check represents, or a plain `str`
+      name for a `.custom()` check (see `CustomCheck`).
     * `_statistic_func`: the point-summary function (e.g. `np.mean`/
       `np.median`) used both to report `before_value`/`after_value` on the
       result *and*, on the bootstrap path, as the statistic whose
@@ -172,7 +177,7 @@ class MetricCheck:
     `Check.rate(...)`/`Check.median(...)` instead.
     """
 
-    _metric: ClassVar[Metric]
+    _metric: ClassVar[Metric | str]
     _statistic_func: ClassVar[StatisticFunc]
     _analytical_func: ClassVar[AnalyticalDiffFunc | None] = None
 
@@ -394,6 +399,125 @@ class MedianCheck(MetricCheck):
     _statistic_func = staticmethod(np.median)
 
 
+class CustomCheck(MetricCheck):
+    """A check bound to comparing a user-supplied `statistic_func` of one
+    column between two datasets.
+
+    Returned by `Check.custom(...)`/`ArrayCheck.custom(...)`; not meant to
+    be constructed directly.
+
+    There's no general closed-form confidence interval for an arbitrary
+    statistic, so `CustomCheck` only supports bootstrap resampling: unlike
+    `MeanCheck`/`RateCheck`/`MedianCheck`, its `.equivalent()`/
+    `.change_greater_than()`/`.change_less_than()` don't even accept a
+    `method` argument -- there's nothing to switch to.
+
+    `statistic_func` is used both to report `before_value`/`after_value`
+    and, on the bootstrap path, as the statistic whose difference is
+    resampled (the same "one function, two roles" design as every
+    built-in metric). It must:
+
+    * Return a single scalar when called on a 1-D array, e.g.
+      `statistic_func(before_values)`.
+    * Accept an `axis=` keyword and apply row-wise when called on a 2-D
+      array, like `np.mean`/`np.median` do -- this is what lets bootstrap
+      resampling apply it to every resample at once instead of looping in
+      Python. Bind extra arguments with `functools.partial` (e.g.
+      `functools.partial(np.percentile, q=95)`) rather than a plain
+      `lambda x: np.percentile(x, 95)`, which won't accept `axis=`.
+
+    Both are checked eagerly at construction time (see
+    `frameworthy._validation.validate_statistic_func`), so a `statistic_func`
+    that doesn't support this fails fast with a clear `UsageError` here
+    rather than surfacing an opaque numpy error deep inside a
+    multi-thousand-iteration bootstrap loop.
+
+    Bootstrap resampling can also be statistically unstable for exotic
+    statistics (e.g. a high percentile) on small samples -- that's a
+    property of the data/statistic, not something validated here.
+    """
+
+    _analytical_func = None
+
+    def __init__(
+        self,
+        column: str,
+        paired: bool,
+        before_values: np.ndarray,
+        after_values: np.ndarray,
+        *,
+        name: str,
+        statistic_func: StatisticFunc,
+    ) -> None:
+        validate_custom_metric(name, statistic_func)
+        self._metric = name
+        self._statistic_func = statistic_func
+        super().__init__(column, paired, before_values, after_values)
+
+    def _validate_values(self) -> None:
+        validate_statistic_func(self._statistic_func, self._before_values)
+
+    def equivalent(
+        self,
+        within: float,
+        *,
+        alpha: float = DEFAULT_ALPHA,
+        n_resamples: int = DEFAULT_N_RESAMPLES,
+        random_state: int | np.random.Generator | None = None,
+    ) -> EquivalenceResult:
+        """Test whether the difference (after - before) is equivalent
+        within `within`. See `MetricCheck.equivalent()`; `method` isn't
+        exposed here since `CustomCheck` only supports bootstrap.
+        """
+        return super().equivalent(
+            within,
+            alpha=alpha,
+            n_resamples=n_resamples,
+            random_state=random_state,
+            method="bootstrap",
+        )
+
+    def change_greater_than(
+        self,
+        threshold: float,
+        *,
+        alpha: float = DEFAULT_ALPHA,
+        n_resamples: int = DEFAULT_N_RESAMPLES,
+        random_state: int | np.random.Generator | None = None,
+    ) -> ChangeResult:
+        """Rule out that the difference (after - before) is `threshold` or
+        smaller. See `MetricCheck.change_greater_than()`; `method` isn't
+        exposed here since `CustomCheck` only supports bootstrap.
+        """
+        return super().change_greater_than(
+            threshold,
+            alpha=alpha,
+            n_resamples=n_resamples,
+            random_state=random_state,
+            method="bootstrap",
+        )
+
+    def change_less_than(
+        self,
+        threshold: float,
+        *,
+        alpha: float = DEFAULT_ALPHA,
+        n_resamples: int = DEFAULT_N_RESAMPLES,
+        random_state: int | np.random.Generator | None = None,
+    ) -> ChangeResult:
+        """Rule out that the difference (after - before) is `threshold` or
+        larger. See `MetricCheck.change_less_than()`; `method` isn't
+        exposed here since `CustomCheck` only supports bootstrap.
+        """
+        return super().change_less_than(
+            threshold,
+            alpha=alpha,
+            n_resamples=n_resamples,
+            random_state=random_state,
+            method="bootstrap",
+        )
+
+
 MetricCheckT = TypeVar("MetricCheckT", bound=MetricCheck)
 
 
@@ -466,10 +590,13 @@ class Check:
         column: str,
         before: str | None,
         metric: str,
+        **extra_kwargs: object,
     ) -> MetricCheckT:
-        """Shared implementation behind `.mean()`, `.rate()`, and
-        `.median()`: extract `before`/`after` values for `column` and
-        construct `cls` (`MeanCheck`/`RateCheck`/`MedianCheck`) from them.
+        """Shared implementation behind `.mean()`, `.rate()`, `.median()`,
+        and `.custom()`: extract `before`/`after` values for `column` and
+        construct `cls` (`MeanCheck`/`RateCheck`/`MedianCheck`/
+        `CustomCheck`) from them. `extra_kwargs` passes through to `cls`,
+        for `CustomCheck`'s `name`/`statistic_func`.
         """
         before_values, after_values, paired = self._extract_before_after(
             column, before, metric
@@ -479,6 +606,7 @@ class Check:
             paired=paired,
             before_values=before_values,
             after_values=after_values,
+            **extra_kwargs,
         )
 
     def mean(self, column: str, before: str | None = None) -> MeanCheck:
@@ -515,6 +643,37 @@ class Check:
         to `check()`.
         """
         return self._metric_check(MedianCheck, column, before, "median")
+
+    def custom(
+        self,
+        column: str,
+        statistic_func: StatisticFunc,
+        name: str,
+        before: str | None = None,
+    ) -> CustomCheck:
+        """Select a column and compare a user-supplied `statistic_func` of
+        it between `before` and `after`.
+
+        Unlike `.mean()`/`.rate()`/`.median()`, there's no closed-form CI
+        for an arbitrary statistic, so the returned `CustomCheck` only
+        supports bootstrap resampling; see `CustomCheck` for
+        `statistic_func`'s requirements (checked eagerly) and `name`'s
+        role in result output.
+
+        If `check()` was given a single dataframe, pass `before=<column
+        name>` here to compare two columns within that same dataframe as
+        paired observations (row-by-row). Otherwise, `before` must be
+        omitted and `column` is compared between the two dataframes passed
+        to `check()`.
+        """
+        return self._metric_check(
+            CustomCheck,
+            column,
+            before,
+            "custom",
+            name=name,
+            statistic_func=statistic_func,
+        )
 
 
 def check(
@@ -593,6 +752,24 @@ class ArrayCheck:
             paired=self._paired,
             before_values=self._before_values,
             after_values=self._after_values,
+        )
+
+    def custom(
+        self, statistic_func: StatisticFunc, name: str, column: str = "value"
+    ) -> CustomCheck:
+        """Compare a user-supplied `statistic_func` of the two arrays.
+
+        `column` is used purely as a display label; see `.mean()`. See
+        `CustomCheck` for `statistic_func`'s requirements (checked
+        eagerly) and `name`'s role in result output.
+        """
+        return CustomCheck(
+            column=column,
+            paired=self._paired,
+            before_values=self._before_values,
+            after_values=self._after_values,
+            name=name,
+            statistic_func=statistic_func,
         )
 
 

@@ -3,7 +3,7 @@ from dataclasses import dataclass
 
 from ._constants import Direction, Metric
 from ._errors import FrameworthyAssertionError
-from ._format import format_margin, format_point_values, format_value
+from ._format import format_margin, format_point_values, format_value, metric_label
 from .decision import Decision
 
 
@@ -21,7 +21,7 @@ class ComparisonResult:
 
     decision: Decision
     column: str
-    metric: Metric
+    metric: Metric | str
     paired: bool
     before_value: float
     after_value: float
@@ -56,7 +56,8 @@ class ComparisonResult:
         diff_str = format_value(self.diff, self.metric)
 
         return (
-            f"{self.decision.value.upper()}: {self.metric.value}({self.column}) "
+            f"{self.decision.value.upper()}: {metric_label(self.metric)}"
+            f"({self.column}) "
             f"{point_values}"
             f"diff (after - before) = {diff_str}, "
             f"{self._claim_summary()}"

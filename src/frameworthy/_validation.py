@@ -7,6 +7,7 @@ each function in `_intervals.py` re-implementing (and subtly re-wording) its
 own guard.
 """
 
+from collections.abc import Callable
 from dataclasses import dataclass
 
 import numpy as np
@@ -55,6 +56,58 @@ def validate_equal_length(
             f"Paired {context} requires `before` and `after` to have the "
             f"same length, got {len(before)} and {len(after)}."
         )
+
+
+def validate_custom_metric(name: str, statistic_func: Callable) -> None:
+    """Guard `.custom()`'s `name`/`statistic_func` arguments themselves,
+    before anything is done with the data. `validate_statistic_func` below
+    separately checks that `statistic_func` actually behaves as required.
+    """
+    if not isinstance(name, str) or not name:
+        raise UsageError(f"`name` must be a non-empty string, got {name!r}.")
+    if not callable(statistic_func):
+        raise UsageError(f"`statistic_func` must be callable, got {statistic_func!r}.")
+
+
+def validate_statistic_func(statistic_func: Callable, sample: np.ndarray) -> None:
+    """Fail fast on a `statistic_func` that won't work for `.custom()`,
+    before any bootstrap resampling begins, rather than letting a bad
+    function surface as an opaque numpy error deep inside a
+    multi-thousand-iteration bootstrap loop.
+
+    Checks two things `statistic_func` must support:
+
+    * Called plainly on a 1-D array, it must return something castable to
+      a single `float` (this is also how `before_value`/`after_value` are
+      reported).
+    * Called with `axis=1` on a 2-D array, it must apply row-wise, like
+      `np.mean`/`np.median` do -- this is what lets bootstrap resampling
+      apply `statistic_func` to every resample at once instead of looping
+      in Python. Bind extra arguments with `functools.partial` (e.g.
+      `functools.partial(np.percentile, q=95)`) rather than a plain
+      `lambda x: np.percentile(x, 95)`, which won't accept `axis=`.
+    """
+    try:
+        float(statistic_func(sample))
+    except Exception as exc:
+        raise UsageError(
+            "`statistic_func` must return a single scalar when called on "
+            "a 1-D array, e.g. `statistic_func(before_values)`; calling it "
+            f"that way raised {exc!r}."
+        ) from exc
+
+    batch = np.stack([sample, sample])
+    try:
+        statistic_func(batch, axis=1)
+    except Exception as exc:
+        raise UsageError(
+            "`statistic_func` must accept an `axis=` keyword argument and "
+            "apply row-wise, like `np.mean`/`np.median` do (this is what "
+            "lets bootstrap resampling vectorize instead of looping in "
+            "Python); bind extra arguments with `functools.partial` (e.g. "
+            "`functools.partial(np.percentile, q=95)`) rather than a plain "
+            f"lambda. Calling `statistic_func(array, axis=1)` raised {exc!r}."
+        ) from exc
 
 
 @dataclass(frozen=True)
