@@ -414,14 +414,19 @@ def diff_ci(
 
     A new metric only needs its own `analytical_fn`; it can reuse this
     dispatcher directly rather than re-implementing `mean_diff_ci`/
-    `rate_diff_ci`'s dispatch logic from scratch.
+    `rate_diff_ci`'s dispatch logic from scratch. If a metric has no
+    closed-form estimator at all (e.g. `median_diff_ci`), it should simply
+    omit `analytical_func`: `method="analytical"` then raises a
+    `UsageError` here rather than requiring each such metric to
+    re-implement the same rejection.
     """
     validate_method(method)
 
     if method == "analytical":
         if analytical_func is None:
-            raise ValueError(
-                "analytical_func must be provided when method='analytical'"
+            raise UsageError(
+                "There's no closed-form analytical confidence interval for "
+                'this metric; use `method="bootstrap"` instead.'
             )
         return analytical_func(before, after, paired=paired, alpha=alpha)
 
@@ -482,19 +487,12 @@ def median_diff_ci(
     """
     Select an inference strategy and compute the median difference CI.
 
-    Thin wrapper around `diff_ci` with `statistic_func=np.median`: since
-    there's no analytical estimator for a median difference,
-    `method="analytical"` raises a `UsageError` (see
-    `_no_analytical_median_ci`) and `method="bootstrap"` is the only
-    supported (and default) path for built-in `.median()` checks.
+    Thin wrapper around `diff_ci` with `statistic_func=np.median` and no
+    `analytical_func`: since there's no analytical estimator for a median
+    difference, `method="analytical"` raises a `UsageError` (from `diff_ci`
+    itself) and `method="bootstrap"` is the only supported (and default)
+    path for built-in `.median()` checks.
     """
-    if method == "analytical":
-        raise UsageError(
-            "There's no closed-form analytical confidence interval for a "
-            "median difference; `.median()` checks only support "
-            '`method="bootstrap"` (the default).'
-        )
-
     return diff_ci(
         before,
         after,
