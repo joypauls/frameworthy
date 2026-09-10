@@ -1,3 +1,5 @@
+import functools
+
 import numpy as np
 import pytest
 
@@ -5,10 +7,12 @@ from frameworthy._errors import InvalidDataError, UsageError
 from frameworthy._validation import (
     InferenceConfig,
     validate_alpha,
+    validate_custom_metric,
     validate_equal_length,
     validate_method,
     validate_min_observations,
     validate_n_resamples,
+    validate_statistic_func,
 )
 
 
@@ -85,3 +89,65 @@ class TestInferenceConfig:
         config_b = InferenceConfig(random_state=42)
 
         assert config_a.rng.integers(0, 1000) == config_b.rng.integers(0, 1000)
+
+
+class TestValidateCustomMetric:
+    def test_accepts_a_valid_name_and_callable(self):
+        validate_custom_metric("p95_latency", np.mean)  # should not raise
+
+    def test_rejects_empty_name(self):
+        with pytest.raises(UsageError, match="`name`"):
+            validate_custom_metric("", np.mean)
+
+    def test_rejects_non_string_name(self):
+        with pytest.raises(UsageError, match="`name`"):
+            validate_custom_metric(123, np.mean)
+
+    def test_rejects_non_callable_statistic_func(self):
+        with pytest.raises(UsageError, match="`statistic_func`"):
+            validate_custom_metric("p95_latency", "not callable")
+
+
+class TestValidateStatisticFunc:
+    """`validate_statistic_func` is `.custom()`'s fail-fast smoke test:
+    it should accept anything that follows the `np.mean`/`np.median`
+    convention, and reject (with a clear `UsageError`, not a raw numpy
+    error) anything that doesn't return a scalar or doesn't support
+    `axis=`.
+    """
+
+    def test_accepts_numpy_reduction_functions(self):
+        sample = np.array([1.0, 2.0, 3.0, 4.0])
+
+        validate_statistic_func(np.mean, sample)  # should not raise
+        validate_statistic_func(np.median, sample)  # should not raise
+
+    def test_accepts_functools_partial_bound_percentile(self):
+        sample = np.array([1.0, 2.0, 3.0, 4.0, 5.0])
+        p95 = functools.partial(np.percentile, q=95)
+
+        validate_statistic_func(p95, sample)  # should not raise
+
+    def test_rejects_function_that_does_not_support_axis(self):
+        sample = np.array([1.0, 2.0, 3.0, 4.0, 5.0])
+
+        def p95(values):
+            return np.percentile(values, 95)
+
+        with pytest.raises(UsageError, match="axis"):
+            validate_statistic_func(p95, sample)
+
+    def test_rejects_function_that_does_not_return_a_scalar(self):
+        sample = np.array([1.0, 2.0, 3.0])
+
+        with pytest.raises(UsageError, match="single scalar"):
+            validate_statistic_func(lambda x, axis=None: x, sample)
+
+    def test_rejects_function_that_raises(self):
+        sample = np.array([1.0, 2.0, 3.0])
+
+        def broken(_values):
+            raise RuntimeError("boom")
+
+        with pytest.raises(UsageError, match="single scalar"):
+            validate_statistic_func(broken, sample)
