@@ -1,6 +1,6 @@
 [project]
 name = "frameworthy"
-version = "0.1.3"
+version = "0.1.4"
 description = "Lightweight statistical validation library for data changes."
 readme = "README.md"
 authors = [
