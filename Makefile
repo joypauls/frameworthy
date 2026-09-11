@@ -14,10 +14,9 @@ test-cov-ci:
 release:
 	@echo "Current Version: $$(uv version | cut -d' ' -f2)"; \
 	read -p "New Version: " VERSION; \
-	read -s -p "PyPI Token: " TOKEN; echo; \
 	uv version "$$VERSION"; \
 	rm -rf dist; \
-	uv build && uv publish --token "$$TOKEN"
+	uv build 
 
 .PHONY: docs-local
 docs-local:
