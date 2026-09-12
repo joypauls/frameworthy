@@ -97,6 +97,11 @@ uv run scripts/examples.py
 ```
 
 
+## Feedback/Questions
+
+Questions or feedback are welcome! Please open an [issue](https://github.com/joypauls/frameworthy/issues).
+
+
 ## License
 
 MIT, but attribution is appreciated.
