@@ -40,7 +40,7 @@ after_df = pl.read_csv("after.csv")
 
 # run a check
 result = (
-    fw.check(after_df, before=before_df)
+    fw.check(after_df, before_df)
     .mean("column_name")
     .equivalent(within=0.1)
 )
@@ -49,6 +49,16 @@ result = (
 print(result)
 # or raise an exception on failure
 result.assert_passed()
+```
+
+No data of your own yet? `check()` also accepts two numpy arrays directly, and `frameworthy` ships a couple of sample-data generators so you can try it with no extra steps:
+
+```python
+import frameworthy as fw
+
+data = fw.sample_normal(shift=0.0)
+result = fw.check(data.after, data.before).mean().equivalent(within=0.2)
+print(result)
 ```
 
 
