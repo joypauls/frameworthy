@@ -1,5 +1,5 @@
 from collections.abc import Sequence
-from typing import ClassVar, TypeVar
+from typing import ClassVar, TypeVar, overload
 
 import numpy as np
 from narwhals.stable.v2.typing import IntoDataFrame
@@ -675,39 +675,15 @@ class Check:
         )
 
 
-def check(
-    after: IntoDataFrame,
-    before: IntoDataFrame | None = None,
-    paired_by: str | Sequence[str] | None = None,
-) -> Check:
-    """Start a statistical check comparing `before` and `after` data.
-
-    `before` may be:
-
-    * a separate dataframe, compared column-by-column with `after` via
-      `.mean(column)`. If `paired_by` is given, `before` and `after` are
-      aligned on that key (or keys) first; both sides must have at most
-      one row per key value. If `paired_by` is omitted, `before` and
-      `after` are treated as independent samples.
-    * omitted, in which case `after` is the only dataframe and
-      `.mean(after_column, before=before_column)` compares two columns
-      within it as paired, row-by-row observations. `paired_by` is not
-      valid in this mode.
-
-    For two 1-D numpy arrays of already-extracted metric values, use
-    `check_arrays(...)` instead.
-    """
-    return Check(after=after, before=before, paired_by=paired_by)
-
-
 class ArrayCheck:
     """Entry point for comparing two 1-D numpy arrays of already-extracted
     metric values, as independent (unpaired) samples.
 
-    Returned by `check_arrays(...)`; not meant to be constructed directly.
-    Unlike `Check`, there's no dataframe/column concept here, so there's
-    also no paired mode -- arrays have no key to align pairs by, which is
-    why `check_arrays()` (unlike `check()`) has no `paired_by` parameter.
+    Returned by `check(...)` when `after`/`before` are numpy arrays rather
+    than dataframes; not meant to be constructed directly. Unlike `Check`,
+    there's no dataframe/column concept here, so there's also no paired
+    mode -- arrays have no key to align pairs by, which is why `check()`
+    rejects `paired_by` for array input.
     """
 
     def __init__(self, after: np.ndarray, before: np.ndarray) -> None:
@@ -720,7 +696,7 @@ class ArrayCheck:
 
         `column` is used purely as a display label (e.g. shows up as
         "mean(column)" in results/messages) -- there's nothing to select,
-        since both arrays were already given in full to `check_arrays()`.
+        since both arrays were already given in full to `check()`.
         """
         return MeanCheck(
             column=column,
@@ -772,13 +748,75 @@ class ArrayCheck:
         )
 
 
-def check_arrays(after: np.ndarray, before: np.ndarray) -> ArrayCheck:
-    """Start a statistical check comparing two 1-D numpy arrays of
-    already-extracted metric values.
+@overload
+def check(
+    after: np.ndarray,
+    before: np.ndarray,
+    paired_by: None = None,
+) -> ArrayCheck: ...
 
-    Always treated as independent samples -- there's no equivalent of
-    `paired_by` since arrays have no key column to align pairs by. Use
-    `check(...)` instead for dataframe input, which supports both paired
-    and unpaired comparisons.
+
+@overload
+def check(
+    after: IntoDataFrame,
+    before: IntoDataFrame | None = None,
+    paired_by: str | Sequence[str] | None = None,
+) -> Check: ...
+
+
+def check(
+    after: IntoDataFrame | np.ndarray,
+    before: IntoDataFrame | np.ndarray | None = None,
+    paired_by: str | Sequence[str] | None = None,
+) -> Check | ArrayCheck:
+    """Start a statistical check comparing `before` and `after` data.
+
+    `after`/`before` may be:
+
+    * dataframes (the common case). `before` may then be:
+
+        * a separate dataframe, compared column-by-column with `after`
+          via `.mean(column)`. If `paired_by` is given, `before` and
+          `after` are aligned on that key (or keys) first; both sides
+          must have at most one row per key value. If `paired_by` is
+          omitted, `before` and `after` are treated as independent
+          samples.
+        * omitted, in which case `after` is the only dataframe and
+          `.mean(after_column, before=before_column)` compares two
+          columns within it as paired, row-by-row observations.
+          `paired_by` is not valid in this mode.
+
+    * two 1-D numpy arrays of already-extracted metric values, always
+      treated as independent (unpaired) samples. Both `after` and
+      `before` must be arrays together (there's no single-array mode,
+      since arrays have no columns to compare within themselves), and
+      `paired_by` isn't valid -- arrays have no key column to align
+      pairs by. The returned `ArrayCheck` has a slightly different
+      `.custom()` signature than `Check` (no `column` to select), so
+      check its docstring separately.
     """
-    return ArrayCheck(after=after, before=before)
+    after_is_array = isinstance(after, np.ndarray)
+    before_is_array = isinstance(before, np.ndarray)
+
+    if after_is_array or before_is_array:
+        if before is None:
+            raise UsageError(
+                "`check()` requires both `after` and `before` to be numpy "
+                "arrays; got `after` as an array with `before` omitted. "
+                "Arrays have no columns, so there's no single-array "
+                "comparison mode (unlike a single dataframe's "
+                "`before=<column name>` mode)."
+            )
+        if not (after_is_array and before_is_array):
+            raise UsageError(
+                "`after` and `before` must both be numpy arrays, or both be "
+                "dataframe-like -- got a mix of the two."
+            )
+        if paired_by is not None:
+            raise UsageError(
+                "`paired_by` is not valid when `after`/`before` are numpy "
+                "arrays; arrays have no key column to align pairs by."
+            )
+        return ArrayCheck(after=after, before=before)
+
+    return Check(after=after, before=before, paired_by=paired_by)

@@ -14,8 +14,8 @@ from frameworthy.check import (
     MetricCheck,
     RateCheck,
     check,
-    check_arrays,
 )
+from frameworthy.datasets import SampleData, sample_normal, sample_rate
 from frameworthy.decision import Decision
 from frameworthy.results import ChangeResult, EquivalenceResult
 
@@ -34,7 +34,9 @@ __all__ = [
     "MedianCheck",
     "MetricCheck",
     "RateCheck",
+    "SampleData",
     "UsageError",
     "check",
-    "check_arrays",
+    "sample_normal",
+    "sample_rate",
 ]

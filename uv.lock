@@ -164,9 +164,9 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "narwhals", specifier = ">=2.25.0" },
-    { name = "numpy", specifier = ">=2.4.6" },
-    { name = "scipy", specifier = ">=1.17.1" },
+    { name = "narwhals", specifier = ">=2.0" },
+    { name = "numpy", specifier = ">=2.2" },
+    { name = "scipy", specifier = ">=1.16" },
 ]
 
 [package.metadata.requires-dev]

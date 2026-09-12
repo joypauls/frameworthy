@@ -676,17 +676,18 @@ class TestInferenceOptions:
 
 
 class TestArrayCheck:
-    """`ArrayCheck`/`check_arrays()`: the array-input counterpart to
-    `Check`/`check()`, always unpaired. Only `.custom()` is covered here in
-    detail (mirroring `TestCustomSpecific` above); `.mean()`/`.rate()`/
-    `.median()` just construct the same `MeanCheck`/`RateCheck`/
-    `MedianCheck` classes already covered via `Check`.
+    """`ArrayCheck`, returned by `check()` when given two numpy arrays:
+    the array-input counterpart to `Check`/dataframe input, always
+    unpaired. Only `.custom()` is covered here in detail (mirroring
+    `TestCustomSpecific` above); `.mean()`/`.rate()`/`.median()` just
+    construct the same `MeanCheck`/`RateCheck`/`MedianCheck` classes
+    already covered via `Check`.
     """
 
     def test_mean_matches_check_result(self):
         before, after = EQUIVALENT_ARRAYS["mean", False]
 
-        result = fw.check_arrays(after, before).mean().equivalent(within=MARGIN["mean"])
+        result = fw.check(after, before).mean().equivalent(within=MARGIN["mean"])
 
         assert result.paired is False
         assert result.decision == "passed"
@@ -695,7 +696,7 @@ class TestArrayCheck:
         before, after = EQUIVALENT_ARRAYS["mean", False]
 
         result = (
-            fw.check_arrays(after, before)
+            fw.check(after, before)
             .custom(np.mean, name="array_mean")
             .equivalent(within=MARGIN["mean"], random_state=0)
         )
@@ -709,4 +710,35 @@ class TestArrayCheck:
         before, after = EQUIVALENT_ARRAYS["mean", False]
 
         with pytest.raises(fw.UsageError, match="`name`"):
-            fw.check_arrays(after, before).custom(np.mean, name="")
+            fw.check(after, before).custom(np.mean, name="")
+
+
+class TestCheckArrayDispatch:
+    """`check()`'s dispatch between `Check` (dataframes) and `ArrayCheck`
+    (numpy arrays), and the `UsageError`s raised for invalid mixes of the
+    two.
+    """
+
+    def test_two_arrays_returns_array_check(self):
+        before, after = EQUIVALENT_ARRAYS["mean", False]
+
+        assert isinstance(fw.check(after, before), fw.ArrayCheck)
+
+    def test_mixing_array_and_dataframe_raises(self, frame_factory):
+        before, after = EQUIVALENT_ARRAYS["mean", False]
+        after_df = frame_factory({"revenue": after})
+
+        with pytest.raises(fw.UsageError, match="mix"):
+            fw.check(after_df, before)
+
+    def test_array_after_without_before_raises(self):
+        _, after = EQUIVALENT_ARRAYS["mean", False]
+
+        with pytest.raises(fw.UsageError, match="`before`"):
+            fw.check(after)
+
+    def test_array_with_paired_by_raises(self):
+        before, after = EQUIVALENT_ARRAYS["mean", False]
+
+        with pytest.raises(fw.UsageError, match="paired_by"):
+            fw.check(after, before, paired_by="id")
