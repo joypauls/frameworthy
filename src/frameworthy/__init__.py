@@ -14,7 +14,6 @@ from frameworthy.check import (
     MetricCheck,
     RateCheck,
     check,
-    check_arrays,
 )
 from frameworthy.decision import Decision
 from frameworthy.results import ChangeResult, EquivalenceResult
@@ -36,5 +35,4 @@ __all__ = [
     "RateCheck",
     "UsageError",
     "check",
-    "check_arrays",
 ]

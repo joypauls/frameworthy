@@ -1,11 +1,12 @@
-> ⚠️ WIP: All 0.1.x releases are unstable. 0.2.0 will be the first stable, production-ready release.
+> ⚠️ WIP: All 0.1.x releases are experimental. 0.2.0 will be the first stable, production-ready release.
 
-> Releases >0.1.3 are functional and ready for testing, but the API is still subject to change.
+> Releases >0.1.5 are ready for testing, but the API is still subject to change.
 
 # frameworthy
 
 ![PyPI Version](https://img.shields.io/pypi/v/frameworthy) 
 [![PyPI pyversions](https://img.shields.io/pypi/pyversions/frameworthy.svg?x=1)](https://pypi.org/project/frameworthy/)
+[![Tests](https://github.com/joypauls/frameworthy/actions/workflows/tests.yml/badge.svg)](https://github.com/joypauls/frameworthy/actions/workflows/tests.yml)
 [![codecov](https://codecov.io/gh/joypauls/frameworthy/branch/main/graph/badge.svg?token=npu0JtY8hc)](https://codecov.io/gh/joypauls/frameworthy)
 
 Lightweight statistical validation library for data changes. Built for engineers and scientists who need to validate data changes with statistical rigor. Works in data validation pipelines, in tests with assertions, or in exploratory settings with easily inspectable results.
