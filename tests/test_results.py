@@ -6,6 +6,13 @@ from frameworthy.decision import Decision
 from frameworthy.results import ChangeResult, EquivalenceResult
 
 
+def _normalize(text: str) -> str:
+    """Collapse all whitespace so assertions don't depend on the exact
+    column-alignment padding used by `__str__`.
+    """
+    return " ".join(text.split())
+
+
 def _make_result(decision: Decision, **overrides) -> EquivalenceResult:
     defaults = {
         "decision": decision,
@@ -74,7 +81,7 @@ class TestStr:
             within=2.0,
             alpha=0.05,
         )
-        text = str(result)
+        text = _normalize(str(result))
 
         assert "PASSED" in text
         assert "mean(revenue)" in text
@@ -86,7 +93,7 @@ class TestStr:
 
     def test_reports_unpaired_sample_sizes(self):
         result = _make_result(Decision.FAILED, paired=False, n_before=30, n_after=45)
-        text = str(result)
+        text = _normalize(str(result))
 
         assert "unpaired" in text
         assert "n_before=30" in text
@@ -103,7 +110,7 @@ class TestStr:
             ci_high=0.03,
             within=0.005,
         )
-        text = str(result)
+        text = _normalize(str(result))
 
         assert "rate(revenue)" in text
         assert "before = 40.0%" in text
@@ -116,7 +123,7 @@ class TestStr:
 
     def test_mean_does_not_show_percentage_point_formatting(self):
         result = _make_result(Decision.PASSED, metric=Metric.MEAN)
-        text = str(result)
+        text = _normalize(str(result))
 
         assert "pp" not in text
         assert "before =" not in text
@@ -130,7 +137,7 @@ class TestStr:
             before_value=100.0,
             after_value=101.0,
         )
-        text = str(result)
+        text = _normalize(str(result))
 
         assert "p95_latency(revenue)" in text
         assert "pp" not in text
@@ -178,7 +185,7 @@ class TestChangeResultStr:
             threshold=20.0,
             alpha=0.05,
         )
-        text = str(result)
+        text = _normalize(str(result))
 
         assert "PASSED" in text
         assert "mean(latency_ms)" in text
@@ -205,7 +212,7 @@ class TestChangeResultStr:
             before_value=0.40,
             after_value=0.398,
         )
-        text = str(result)
+        text = _normalize(str(result))
 
         assert "rate(latency_ms)" in text
         assert "before = 40.0%" in text

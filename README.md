@@ -64,7 +64,7 @@ print(result)
 
 ### Usage
 
-Bring your data: two pandas/polars DataFrames (before and after / pre and post).
+Bring your data: two Pandas/Polars dataframes (before and after / pre and post). Also supports passing in numpy arrays directly.
 
 A standard `frameworthy` check looks like this:
 

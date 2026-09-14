@@ -3,7 +3,7 @@ from dataclasses import dataclass
 
 from ._constants import Direction, Metric
 from ._errors import FrameworthyAssertionError
-from ._format import format_margin, format_point_values, format_value, metric_label
+from ._format import format_margin, format_point_rows, format_value, metric_label
 from .decision import Decision
 
 
@@ -14,7 +14,7 @@ class ComparisonResult:
     Not meant to be constructed or subclassed outside this module: it
     holds the fields, `pairing`/`levels` formatting, and `passed`/
     `assert_passed` logic common to both kinds of check, and defers to
-    `_claim_summary()` for the part of `__str__` that's specific to each
+    `_claim_rows()` for the part of `__str__` that's specific to each
     (a two-sided CI + margin for equivalence, a one-sided bound + threshold
     for a directional change).
     """
@@ -38,9 +38,9 @@ class ComparisonResult:
         """Whether the evidence supports the claim being tested."""
         return self.decision == Decision.PASSED
 
-    def _claim_summary(self) -> str:
-        """The claim-specific middle portion of `__str__` (including its
-        own trailing ", "). Implemented by each subclass.
+    def _claim_rows(self) -> list[tuple[str, str]]:
+        """The claim-specific `(label, value)` rows shown between the diff
+        and the trailing alpha/pairing line. Implemented by each subclass.
         """
         raise NotImplementedError
 
@@ -50,19 +50,19 @@ class ComparisonResult:
             if self.paired
             else f"unpaired, n_before={self.n_before}, n_after={self.n_after}"
         )
-        point_values = format_point_values(
-            self.before_value, self.after_value, self.metric
-        )
-        diff_str = format_value(self.diff, self.metric)
+        rows = [
+            *format_point_rows(self.before_value, self.after_value, self.metric),
+            ("diff (after - before)", format_value(self.diff, self.metric)),
+            *self._claim_rows(),
+        ]
+        width = max(len(label) for label, _ in rows)
+        body = "\n".join(f"  {label.ljust(width)} = {value}" for label, value in rows)
 
-        return (
-            f"{self.decision.value.upper()}: {metric_label(self.metric)}"
-            f"({self.column}) "
-            f"{point_values}"
-            f"diff (after - before) = {diff_str}, "
-            f"{self._claim_summary()}"
-            f"alpha = {self.alpha:g}, {pairing}"
+        header = (
+            f"{self.decision.value.upper()}: {metric_label(self.metric)}({self.column})"
         )
+        footer = f"  alpha = {self.alpha:g}, {pairing}"
+        return f"{header}\n{body}\n{footer}"
 
     def assert_passed(self) -> None:
         """Raise if the evidence supports the opposite of the claim being
@@ -84,14 +84,14 @@ class EquivalenceResult(ComparisonResult):
 
     within: float
 
-    def _claim_summary(self) -> str:
+    def _claim_rows(self) -> list[tuple[str, str]]:
         ci_pct = round((1 - 2 * self.alpha) * 100)
         ci_str = (
             f"[{format_value(self.ci_low, self.metric)}, "
             f"{format_value(self.ci_high, self.metric)}]"
         )
         margin_str = format_margin(self.within, self.metric)
-        return f"{ci_pct}% CI = {ci_str}, margin = {margin_str}, "
+        return [(f"{ci_pct}% CI", ci_str), ("margin", margin_str)]
 
 
 @dataclass(frozen=True)
@@ -105,9 +105,8 @@ class ChangeResult(ComparisonResult):
     threshold: float
     direction: Direction
 
-    def _claim_summary(self) -> str:
-        # each CI endpoint is individually a (1 - alpha) one-sided bound, so
-        # only the endpoint relevant to `direction` is reported
+    def _claim_rows(self) -> list[tuple[str, str]]:
+        # each ci endpoint is individually a (1 - alpha) one sided bound
         bound_pct = round((1 - self.alpha) * 100)
         if self.direction == "greater_than":
             bound_label = "lower bound"
@@ -120,7 +119,7 @@ class ChangeResult(ComparisonResult):
 
         bound_str = format_value(bound, self.metric)
         threshold_str = format_value(self.threshold, self.metric)
-        return (
-            f"{bound_pct}% one-sided {bound_label} = {bound_str}, "
-            f"threshold ({method_name}) = {threshold_str}, "
-        )
+        return [
+            (f"{bound_pct}% one-sided {bound_label}", bound_str),
+            (f"threshold ({method_name})", threshold_str),
+        ]

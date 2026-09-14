@@ -52,14 +52,16 @@ def format_point_value(value: float, metric: Metric | str) -> str:
     return f"{value:.4g}"
 
 
-def format_point_values(before: float, after: float, metric: Metric | str) -> str:
-    """Format the `before = ..., after = ..., ` prefix shown for
-    proportions (where the absolute point value is useful context alongside
-    the diff), or an empty string for metrics that don't need it.
+def format_point_rows(
+    before: float, after: float, metric: Metric | str
+) -> list[tuple[str, str]]:
+    """The `before`/`after` rows shown for proportions (where the absolute
+    point value is useful context alongside the diff), or an empty list
+    for metrics that don't need it.
     """
     if not _is_proportion(metric):
-        return ""
-    return (
-        f"before = {format_point_value(before, metric)}, "
-        f"after = {format_point_value(after, metric)}, "
-    )
+        return []
+    return [
+        ("before", format_point_value(before, metric)),
+        ("after", format_point_value(after, metric)),
+    ]
