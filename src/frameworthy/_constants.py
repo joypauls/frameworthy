@@ -24,6 +24,7 @@ class Metric(str, Enum):
     MEAN = "mean"
     RATE = "rate"
     MEDIAN = "median"
+    WASSERSTEIN = "wasserstein"
 
 
 class Interval(NamedTuple):
