@@ -123,3 +123,65 @@ class ChangeResult(ComparisonResult):
             (f"{bound_pct}% one-sided {bound_label}", bound_str),
             (f"threshold ({method_name})", threshold_str),
         ]
+
+
+@dataclass(frozen=True)
+class DistributionResult:
+    """Result of a distribution-stability check via Wasserstein distance.
+
+    Instances are returned by `.distribution(...).equivalent(...)` and are
+    not meant to be constructed directly.
+
+    Unlike `EquivalenceResult`/`ChangeResult`, there's no `before_value`/
+    `after_value`/`diff` here: a Wasserstein distance is a single
+    non-negative measure of how far apart two distributions are, not a
+    difference of a single-number summary, so it doesn't share
+    `ComparisonResult`'s fields or `__str__` layout. The verdict itself is
+    still three-state and still built the same way as `ChangeResult`'s
+    `direction="less_than"`: `within` is treated as an upper bound on an
+    acceptable distance, `passed` if the whole CI is below it, `failed` if
+    the whole CI is above it, `inconclusive` otherwise.
+    """
+
+    decision: Decision
+    column: str
+    distance: float
+    ci_low: float
+    ci_high: float
+    within: float
+    alpha: float
+    n_before: int
+    n_after: int
+    n_resamples: int
+    method: str = "subsampling"
+
+    @property
+    def passed(self) -> bool:
+        """Whether the evidence supports the claim being tested."""
+        return self.decision == Decision.PASSED
+
+    def __str__(self) -> str:
+        ci_pct = round((1 - 2 * self.alpha) * 100)
+        rows = [
+            ("distance", f"{self.distance:.4g}"),
+            (f"{ci_pct}% CI", f"[{self.ci_low:.4g}, {self.ci_high:.4g}]"),
+            ("within", f"{self.within:.4g}"),
+        ]
+        width = max(len(label) for label, _ in rows)
+        body = "\n".join(f"  {label.ljust(width)} = {value}" for label, value in rows)
+
+        header = f"{self.decision.value.upper()}: wasserstein({self.column})"
+        footer = (
+            f"  alpha = {self.alpha:g}, unpaired, n_before={self.n_before}, "
+            f"n_after={self.n_after}, method={self.method}"
+        )
+        return f"{header}\n{body}\n{footer}"
+
+    def assert_passed(self) -> None:
+        """Raise if the evidence supports the opposite of the claim being
+        tested; warn (but don't raise) if the evidence is inconclusive.
+        """
+        if self.decision == Decision.FAILED:
+            raise FrameworthyAssertionError(str(self))
+        if self.decision == Decision.INCONCLUSIVE:
+            warnings.warn(str(self), stacklevel=2)

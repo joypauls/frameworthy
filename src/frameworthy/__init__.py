@@ -17,7 +17,7 @@ from frameworthy.check import (
 )
 from frameworthy.datasets import SampleData, sample_normal, sample_rate
 from frameworthy.decision import Decision
-from frameworthy.results import ChangeResult, EquivalenceResult
+from frameworthy.results import ChangeResult, DistributionResult, EquivalenceResult
 
 __all__ = [
     "ArrayCheck",
@@ -26,6 +26,7 @@ __all__ = [
     "ColumnNotFoundError",
     "CustomCheck",
     "Decision",
+    "DistributionResult",
     "EquivalenceResult",
     "FrameworthyAssertionError",
     "FrameworthyError",

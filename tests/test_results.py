@@ -3,7 +3,7 @@ import pytest
 from frameworthy._constants import Metric
 from frameworthy._errors import FrameworthyAssertionError
 from frameworthy.decision import Decision
-from frameworthy.results import ChangeResult, EquivalenceResult
+from frameworthy.results import ChangeResult, DistributionResult, EquivalenceResult
 
 
 def _normalize(text: str) -> str:
@@ -32,6 +32,23 @@ def _make_result(decision: Decision, **overrides) -> EquivalenceResult:
     }
     defaults.update(overrides)
     return EquivalenceResult(**defaults)
+
+
+def _make_distribution_result(decision: Decision, **overrides) -> DistributionResult:
+    defaults = {
+        "decision": decision,
+        "column": "revenue",
+        "distance": 0.8,
+        "ci_low": 0.4,
+        "ci_high": 1.2,
+        "within": 5.0,
+        "alpha": 0.05,
+        "n_before": 500,
+        "n_after": 500,
+        "n_resamples": 2000,
+    }
+    defaults.update(overrides)
+    return DistributionResult(**defaults)
 
 
 def _make_change_result(decision: Decision, **overrides) -> ChangeResult:
@@ -239,5 +256,59 @@ class TestChangeResultAssertPassed:
 
     def test_inconclusive_warns_but_does_not_raise(self):
         result = _make_change_result(Decision.INCONCLUSIVE)
+        with pytest.warns(UserWarning, match="INCONCLUSIVE"):
+            result.assert_passed()
+
+
+class TestDistributionResultPassed:
+    @pytest.mark.parametrize(
+        "decision, expected",
+        [
+            (Decision.PASSED, True),
+            (Decision.FAILED, False),
+            (Decision.INCONCLUSIVE, False),
+        ],
+    )
+    def test_passed(self, decision, expected):
+        assert _make_distribution_result(decision).passed is expected
+
+
+class TestDistributionResultStr:
+    def test_includes_key_details(self):
+        result = _make_distribution_result(
+            Decision.PASSED,
+            distance=0.8,
+            ci_low=0.4,
+            ci_high=1.2,
+            within=5.0,
+            alpha=0.05,
+        )
+        text = _normalize(str(result))
+
+        assert "PASSED" in text
+        assert "wasserstein(revenue)" in text
+        assert "distance = 0.8" in text
+        assert "90% CI" in text
+        assert "[0.4, 1.2]" in text
+        assert "within = 5" in text
+        assert "alpha = 0.05" in text
+        assert "unpaired" in text
+        assert "n_before=500" in text
+        assert "n_after=500" in text
+        assert "method=subsampling" in text
+
+
+class TestDistributionResultAssertPassed:
+    def test_passed_does_not_raise_or_warn(self, recwarn):
+        _make_distribution_result(Decision.PASSED).assert_passed()
+        assert len(recwarn) == 0
+
+    def test_failed_raises_frameworthy_assertion_error(self):
+        result = _make_distribution_result(Decision.FAILED)
+        with pytest.raises(FrameworthyAssertionError, match="FAILED"):
+            result.assert_passed()
+
+    def test_inconclusive_warns_but_does_not_raise(self):
+        result = _make_distribution_result(Decision.INCONCLUSIVE)
         with pytest.warns(UserWarning, match="INCONCLUSIVE"):
             result.assert_passed()
