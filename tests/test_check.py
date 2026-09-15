@@ -742,3 +742,87 @@ class TestCheckArrayDispatch:
 
         with pytest.raises(fw.UsageError, match="paired_by"):
             fw.check(after, before, paired_by="id")
+
+
+class TestDistributionSpecific:
+    """Behavior unique to `DistributionCheck`: unlike every other built-in
+    check, it only supports independent samples (two separate dataframes,
+    or two arrays) and only exposes `.equivalent()`.
+    """
+
+    def test_rejects_single_dataframe_mode(self, frame_factory):
+        df = frame_factory({"revenue": [1.0, 2.0, 3.0]})
+
+        with pytest.raises(fw.UsageError, match="single dataframe"):
+            fw.check(df).distribution("revenue")
+
+    def test_rejects_paired_by(self, frame_factory):
+        before = frame_factory({"id": [1, 2], "revenue": [1.0, 2.0]})
+        after = frame_factory({"id": [1, 2], "revenue": [1.5, 2.5]})
+
+        with pytest.raises(fw.UsageError, match="paired_by"):
+            fw.check(after, before=before, paired_by="id").distribution("revenue")
+
+    def test_rejects_non_positive_within(self, frame_factory):
+        rng = np.random.default_rng(0)
+        before = rng.normal(size=50)
+        after = rng.normal(size=50)
+        before_df = frame_factory({"revenue": before})
+        after_df = frame_factory({"revenue": after})
+
+        check_ = fw.check(after_df, before=before_df).distribution("revenue")
+        with pytest.raises(fw.UsageError, match="`within`"):
+            check_.equivalent(within=0.0)
+
+    def test_identical_distribution_passes(self, frame_factory):
+        rng = np.random.default_rng(0)
+        before = rng.normal(loc=10.0, scale=2.0, size=500)
+        after = rng.normal(loc=10.0, scale=2.0, size=500)
+        before_df = frame_factory({"revenue": before})
+        after_df = frame_factory({"revenue": after})
+
+        result = (
+            fw.check(after_df, before=before_df)
+            .distribution("revenue")
+            .equivalent(within=1.0, random_state=0)
+        )
+
+        assert result.decision == "passed"
+        assert result.passed is True
+        assert result.column == "revenue"
+        assert result.n_before == 500
+        assert result.n_after == 500
+        assert result.method == "subsampling"
+        result.assert_passed()  # should not raise
+
+    def test_clearly_shifted_distribution_fails(self, frame_factory):
+        rng = np.random.default_rng(1)
+        before = rng.normal(loc=0.0, scale=1.0, size=500)
+        after = rng.normal(loc=20.0, scale=1.0, size=500)
+        before_df = frame_factory({"revenue": before})
+        after_df = frame_factory({"revenue": after})
+
+        result = (
+            fw.check(after_df, before=before_df)
+            .distribution("revenue")
+            .equivalent(within=1.0, random_state=0)
+        )
+
+        assert result.decision == "failed"
+        assert result.passed is False
+        with pytest.raises(fw.FrameworthyAssertionError):
+            result.assert_passed()
+
+    def test_array_check_distribution_works(self):
+        rng = np.random.default_rng(2)
+        before = rng.normal(loc=5.0, scale=1.0, size=300)
+        after = rng.normal(loc=5.0, scale=1.0, size=300)
+
+        result = (
+            fw.check(after, before)
+            .distribution()
+            .equivalent(within=1.0, random_state=0)
+        )
+
+        assert result.decision == "passed"
+        assert result.column == "value"
