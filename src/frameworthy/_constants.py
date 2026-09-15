@@ -6,6 +6,11 @@ NULL_KEY = object()
 DEFAULT_ALPHA = 0.05
 DEFAULT_N_RESAMPLES = 10_000
 
+# `.distribution()` resamples are more expensive per draw (each draw computes
+# a Wasserstein distance rather than a mean/median), so its default is lower
+# than `DEFAULT_N_RESAMPLES`; still overridable via `n_resamples=`.
+DEFAULT_DISTRIBUTION_N_RESAMPLES = 2_000
+
 # inference strategy options
 InferenceMethod = Literal["analytical", "bootstrap"]
 DEFAULT_INFERENCE_METHOD = "analytical"

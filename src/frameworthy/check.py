@@ -13,12 +13,14 @@ from ._arrays import (
 from ._classify import classify_change_bound, classify_equivalence
 from ._constants import (
     DEFAULT_ALPHA,
+    DEFAULT_DISTRIBUTION_N_RESAMPLES,
     DEFAULT_N_RESAMPLES,
     Direction,
     InferenceMethod,
     Metric,
 )
 from ._dataframes import _normalize_keys, assert_unique_keys, to_narwhals_frame
+from ._distribution import wasserstein_distance_ci
 from ._errors import UsageError
 from ._intervals import (
     AnalyticalDiffFunc,
@@ -32,7 +34,7 @@ from ._validation import (
     validate_custom_metric,
     validate_statistic_func,
 )
-from .results import ChangeResult, EquivalenceResult
+from .results import ChangeResult, DistributionResult, EquivalenceResult
 
 
 def _equivalence_result(
@@ -517,6 +519,79 @@ class CustomCheck(MetricCheck):
         )
 
 
+class DistributionCheck:
+    """A check bound to comparing the distribution of one numeric column
+    between two independent samples, using the Wasserstein-1 (earth
+    mover's) distance.
+
+    Returned by `Check.distribution(...)`/`ArrayCheck.distribution(...)`;
+    not meant to be constructed directly.
+
+    Unlike `MeanCheck`/`RateCheck`/`MedianCheck`/`CustomCheck`, this isn't
+    a `MetricCheck` subclass: it only supports independent (unpaired)
+    samples (there's no paired mode, no `method=` switch, and no
+    `.change_greater_than()`/`.change_less_than()` -- only `.equivalent()`
+    is offered). See `frameworthy._distribution` for why its uncertainty
+    estimate uses a subsampling/m-out-of-n bootstrap rather than the
+    ordinary percentile bootstrap used elsewhere in this library.
+    """
+
+    def __init__(
+        self,
+        column: str,
+        before_values: np.ndarray,
+        after_values: np.ndarray,
+    ) -> None:
+        self._column = column
+        self._before_values = np.asarray(before_values, dtype=float)
+        self._after_values = np.asarray(after_values, dtype=float)
+
+    def equivalent(
+        self,
+        within: float,
+        *,
+        alpha: float = DEFAULT_ALPHA,
+        n_resamples: int = DEFAULT_DISTRIBUTION_N_RESAMPLES,
+        random_state: int | np.random.Generator | None = None,
+    ) -> DistributionResult:
+        """Test whether `before` and `after` come from the same
+        distribution, within a Wasserstein distance of `within` (in the
+        column's native units).
+
+        Builds an m-out-of-n bootstrap confidence interval for the
+        Wasserstein distance, then classifies it against `within` the same
+        way `.change_less_than()` classifies a one-sided upper bound:
+        `passed` if the whole interval is below `within`, `failed` if it's
+        entirely above `within`, `inconclusive` otherwise. `within` must
+        be positive.
+        """
+        if within <= 0:
+            raise UsageError(f"`within` must be positive, got {within}.")
+
+        rng = np.random.default_rng(random_state)
+        distance, ci_low, ci_high = wasserstein_distance_ci(
+            self._before_values,
+            self._after_values,
+            alpha=alpha,
+            n_resamples=n_resamples,
+            rng=rng,
+        )
+        decision = classify_change_bound(ci_low, ci_high, within, direction="less_than")
+
+        return DistributionResult(
+            decision=decision,
+            column=self._column,
+            distance=distance,
+            ci_low=ci_low,
+            ci_high=ci_high,
+            within=within,
+            alpha=alpha,
+            n_before=len(self._before_values),
+            n_after=len(self._after_values),
+            n_resamples=n_resamples,
+        )
+
+
 MetricCheckT = TypeVar("MetricCheckT", bound=MetricCheck)
 
 
@@ -674,6 +749,38 @@ class Check:
             statistic_func=statistic_func,
         )
 
+    def distribution(self, column: str) -> DistributionCheck:
+        """Select a numeric column and compare its distribution between
+        `before` and `after`, via `DistributionCheck.equivalent()`.
+
+        Unlike `.mean()`/`.rate()`/`.median()`/`.custom()`, this only
+        supports independent samples: `check()` must have been given two
+        separate dataframes, and without `paired_by` (both of those
+        pairing modes are for correlated/matched observations, which this
+        first slice doesn't support).
+        """
+        if self._before is None:
+            raise UsageError(
+                "`.distribution()` requires two separate dataframes; "
+                "`check()` was given a single dataframe. Distribution "
+                "checks only support independent samples, so there's no "
+                "single-dataframe `before=<column name>` mode like "
+                "`.mean()`/`.rate()`/`.median()` has."
+            )
+        if self._paired_by is not None:
+            raise UsageError(
+                "`.distribution()` only supports independent samples; it "
+                "can't be used with `paired_by`."
+            )
+
+        before_values, after_values, paired = self._extract_before_after(
+            column, None, "distribution"
+        )
+        assert not paired  # guaranteed by the `paired_by` check above
+        return DistributionCheck(
+            column=column, before_values=before_values, after_values=after_values
+        )
+
 
 class ArrayCheck:
     """Entry point for comparing two 1-D numpy arrays of already-extracted
@@ -745,6 +852,21 @@ class ArrayCheck:
             after_values=self._after_values,
             name=name,
             statistic_func=statistic_func,
+        )
+
+    def distribution(self, column: str = "value") -> DistributionCheck:
+        """Compare the distribution of the two arrays via
+        `DistributionCheck.equivalent()`.
+
+        `column` is used purely as a display label; see `.mean()`. Arrays
+        are always independent samples already (there's no paired mode for
+        arrays), so there's nothing extra to validate here, unlike
+        `Check.distribution()`.
+        """
+        return DistributionCheck(
+            column=column,
+            before_values=self._before_values,
+            after_values=self._after_values,
         )
 
 
