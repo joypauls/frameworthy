@@ -747,7 +747,8 @@ class TestCheckArrayDispatch:
 class TestDistributionSpecific:
     """Behavior unique to `DistributionCheck`: unlike every other built-in
     check, it only supports independent samples (two separate dataframes,
-    or two arrays) and only exposes `.equivalent()`.
+    or two arrays), and offers `.equivalent()`/`.change_greater_than()` but
+    not `.change_less_than()`.
     """
 
     def test_rejects_single_dataframe_mode(self, frame_factory):
@@ -826,3 +827,62 @@ class TestDistributionSpecific:
 
         assert result.decision == "passed"
         assert result.column == "value"
+
+    def test_change_greater_than_rejects_negative_threshold(self, frame_factory):
+        rng = np.random.default_rng(0)
+        before = rng.normal(size=50)
+        after = rng.normal(size=50)
+        before_df = frame_factory({"revenue": before})
+        after_df = frame_factory({"revenue": after})
+
+        check_ = fw.check(after_df, before=before_df).distribution("revenue")
+        with pytest.raises(fw.UsageError, match="`threshold`"):
+            check_.change_greater_than(threshold=-1.0)
+
+    def test_change_greater_than_confirms_drift(self, frame_factory):
+        rng = np.random.default_rng(1)
+        before = rng.normal(loc=0.0, scale=1.0, size=500)
+        after = rng.normal(loc=20.0, scale=1.0, size=500)
+        before_df = frame_factory({"revenue": before})
+        after_df = frame_factory({"revenue": after})
+
+        result = (
+            fw.check(after_df, before=before_df)
+            .distribution("revenue")
+            .change_greater_than(threshold=1.0, random_state=0)
+        )
+
+        assert result.decision == "passed"
+        assert result.passed is True
+        assert result.threshold == 1.0
+        assert result.within is None
+        result.assert_passed()  # should not raise
+
+    def test_change_greater_than_fails_for_identical_distribution(self, frame_factory):
+        rng = np.random.default_rng(0)
+        before = rng.normal(loc=10.0, scale=2.0, size=500)
+        after = rng.normal(loc=10.0, scale=2.0, size=500)
+        before_df = frame_factory({"revenue": before})
+        after_df = frame_factory({"revenue": after})
+
+        result = (
+            fw.check(after_df, before=before_df)
+            .distribution("revenue")
+            .change_greater_than(threshold=5.0, random_state=0)
+        )
+
+        assert result.decision == "failed"
+        assert result.passed is False
+        with pytest.raises(fw.FrameworthyAssertionError):
+            result.assert_passed()
+
+    def test_change_less_than_always_raises(self, frame_factory):
+        rng = np.random.default_rng(0)
+        before = rng.normal(size=50)
+        after = rng.normal(size=50)
+        before_df = frame_factory({"revenue": before})
+        after_df = frame_factory({"revenue": after})
+
+        check_ = fw.check(after_df, before=before_df).distribution("revenue")
+        with pytest.raises(fw.UsageError, match="equivalent"):
+            check_.change_less_than(threshold=5.0)

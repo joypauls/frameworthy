@@ -519,6 +519,51 @@ class CustomCheck(MetricCheck):
         )
 
 
+def _distribution_result(
+    *,
+    column: str,
+    before_values: np.ndarray,
+    after_values: np.ndarray,
+    alpha: float,
+    n_resamples: int,
+    random_state: int | np.random.Generator | None,
+    direction: Direction,
+    within: float | None,
+    threshold: float | None,
+) -> DistributionResult:
+    """Shared implementation behind `DistributionCheck.equivalent()` and
+    `.change_greater_than()`: run `wasserstein_distance_ci`, classify the
+    resulting CI via `classify_change_bound`, and package everything into a
+    `DistributionResult`. Exactly one of `within`/`threshold` is passed
+    through to the result (see `DistributionResult` for what each means);
+    `direction`/the bound they're classified against always agree.
+    """
+    rng = np.random.default_rng(random_state)
+    distance, ci_low, ci_high = wasserstein_distance_ci(
+        before_values,
+        after_values,
+        alpha=alpha,
+        n_resamples=n_resamples,
+        rng=rng,
+    )
+    bound = within if within is not None else threshold
+    decision = classify_change_bound(ci_low, ci_high, bound, direction=direction)
+
+    return DistributionResult(
+        decision=decision,
+        column=column,
+        distance=distance,
+        ci_low=ci_low,
+        ci_high=ci_high,
+        alpha=alpha,
+        n_before=len(before_values),
+        n_after=len(after_values),
+        n_resamples=n_resamples,
+        within=within,
+        threshold=threshold,
+    )
+
+
 class DistributionCheck:
     """A check bound to comparing the distribution of one numeric column
     between two independent samples, using the Wasserstein-1 (earth
@@ -529,11 +574,12 @@ class DistributionCheck:
 
     Unlike `MeanCheck`/`RateCheck`/`MedianCheck`/`CustomCheck`, this isn't
     a `MetricCheck` subclass: it only supports independent (unpaired)
-    samples (there's no paired mode, no `method=` switch, and no
-    `.change_greater_than()`/`.change_less_than()` -- only `.equivalent()`
-    is offered). See `frameworthy._distribution` for why its uncertainty
-    estimate uses a subsampling/m-out-of-n bootstrap rather than the
-    ordinary percentile bootstrap used elsewhere in this library.
+    samples (there's no paired mode, no `method=` switch). It offers
+    `.equivalent()` and `.change_greater_than()`, but not
+    `.change_less_than()` -- see that method's docstring for why. See
+    `frameworthy._distribution` for why its uncertainty estimate uses a
+    subsampling/m-out-of-n bootstrap rather than the ordinary percentile
+    bootstrap used elsewhere in this library.
     """
 
     def __init__(
@@ -568,27 +614,77 @@ class DistributionCheck:
         if within <= 0:
             raise UsageError(f"`within` must be positive, got {within}.")
 
-        rng = np.random.default_rng(random_state)
-        distance, ci_low, ci_high = wasserstein_distance_ci(
-            self._before_values,
-            self._after_values,
-            alpha=alpha,
-            n_resamples=n_resamples,
-            rng=rng,
-        )
-        decision = classify_change_bound(ci_low, ci_high, within, direction="less_than")
-
-        return DistributionResult(
-            decision=decision,
+        return _distribution_result(
             column=self._column,
-            distance=distance,
-            ci_low=ci_low,
-            ci_high=ci_high,
-            within=within,
+            before_values=self._before_values,
+            after_values=self._after_values,
             alpha=alpha,
-            n_before=len(self._before_values),
-            n_after=len(self._after_values),
             n_resamples=n_resamples,
+            random_state=random_state,
+            direction="less_than",
+            within=within,
+            threshold=None,
+        )
+
+    def change_greater_than(
+        self,
+        threshold: float,
+        *,
+        alpha: float = DEFAULT_ALPHA,
+        n_resamples: int = DEFAULT_DISTRIBUTION_N_RESAMPLES,
+        random_state: int | np.random.Generator | None = None,
+    ) -> DistributionResult:
+        """Rule out that `before` and `after` are within a Wasserstein
+        distance of `threshold` of each other -- i.e. confirm the
+        distributions have genuinely drifted apart by more than
+        `threshold` (in the column's native units).
+
+        This is the opposite claim from `.equivalent()`: it builds the
+        same m-out-of-n bootstrap confidence interval for the Wasserstein
+        distance, then classifies it against `threshold` as a one-sided
+        lower bound: `passed` if the whole interval is above `threshold`
+        (the drift is confirmed), `failed` if it's entirely below
+        `threshold`, `inconclusive` otherwise. `threshold` must be
+        non-negative, since a distance can't be negative.
+        """
+        if threshold < 0:
+            raise UsageError(f"`threshold` must be non-negative, got {threshold}.")
+
+        return _distribution_result(
+            column=self._column,
+            before_values=self._before_values,
+            after_values=self._after_values,
+            alpha=alpha,
+            n_resamples=n_resamples,
+            random_state=random_state,
+            direction="greater_than",
+            within=None,
+            threshold=threshold,
+        )
+
+    def change_less_than(
+        self,
+        threshold: float,
+        *,
+        alpha: float = DEFAULT_ALPHA,
+        n_resamples: int = DEFAULT_DISTRIBUTION_N_RESAMPLES,
+        random_state: int | np.random.Generator | None = None,
+    ) -> DistributionResult:
+        """Not supported: raises `UsageError` unconditionally.
+
+        A Wasserstein distance can never be negative, so "rule out that
+        the distance is `threshold` or larger" is exactly the same claim
+        as `.equivalent(within=threshold)` -- there's no separate
+        `.change_less_than()` claim to make here, unlike `MetricCheck`
+        (where a difference can be positive or negative). Defined as a
+        real method (rather than left undefined) so calling it fails with
+        a clear, actionable message instead of a plain `AttributeError`.
+        """
+        raise UsageError(
+            "`.change_less_than()` isn't supported for distribution checks: "
+            "since a Wasserstein distance can't be negative, ruling out that "
+            "it's `threshold` or larger is exactly the same claim as "
+            "`.equivalent(within=threshold)`. Use `.equivalent()` instead."
         )
 
 
