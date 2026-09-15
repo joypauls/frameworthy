@@ -51,6 +51,25 @@ def _make_distribution_result(decision: Decision, **overrides) -> DistributionRe
     return DistributionResult(**defaults)
 
 
+def _make_distribution_change_result(
+    decision: Decision, **overrides
+) -> DistributionResult:
+    defaults = {
+        "decision": decision,
+        "column": "revenue",
+        "distance": 8.0,
+        "ci_low": 6.0,
+        "ci_high": 10.0,
+        "threshold": 5.0,
+        "alpha": 0.05,
+        "n_before": 500,
+        "n_after": 500,
+        "n_resamples": 2000,
+    }
+    defaults.update(overrides)
+    return DistributionResult(**defaults)
+
+
 def _make_change_result(decision: Decision, **overrides) -> ChangeResult:
     defaults = {
         "decision": decision,
@@ -310,5 +329,61 @@ class TestDistributionResultAssertPassed:
 
     def test_inconclusive_warns_but_does_not_raise(self):
         result = _make_distribution_result(Decision.INCONCLUSIVE)
+        with pytest.warns(UserWarning, match="INCONCLUSIVE"):
+            result.assert_passed()
+
+
+class TestDistributionResultRequiresExactlyOneClaim:
+    def test_rejects_neither_within_nor_threshold(self):
+        with pytest.raises(AssertionError):
+            _make_distribution_result(Decision.PASSED, within=None)
+
+    def test_rejects_both_within_and_threshold(self):
+        with pytest.raises(AssertionError):
+            _make_distribution_result(Decision.PASSED, within=5.0, threshold=5.0)
+
+
+class TestDistributionChangeGreaterThanResultPassed:
+    @pytest.mark.parametrize(
+        "decision, expected",
+        [
+            (Decision.PASSED, True),
+            (Decision.FAILED, False),
+            (Decision.INCONCLUSIVE, False),
+        ],
+    )
+    def test_passed(self, decision, expected):
+        assert _make_distribution_change_result(decision).passed is expected
+
+
+class TestDistributionChangeGreaterThanResultStr:
+    def test_includes_key_details(self):
+        result = _make_distribution_change_result(
+            Decision.PASSED,
+            distance=8.0,
+            ci_low=6.0,
+            ci_high=10.0,
+            threshold=5.0,
+            alpha=0.05,
+        )
+        text = _normalize(str(result))
+
+        assert "PASSED" in text
+        assert "wasserstein(revenue)" in text
+        assert "distance = 8" in text
+
+
+class TestDistributionChangeGreaterThanResultAssertPassed:
+    def test_passed_does_not_raise_or_warn(self, recwarn):
+        _make_distribution_change_result(Decision.PASSED).assert_passed()
+        assert len(recwarn) == 0
+
+    def test_failed_raises_frameworthy_assertion_error(self):
+        result = _make_distribution_change_result(Decision.FAILED)
+        with pytest.raises(FrameworthyAssertionError, match="FAILED"):
+            result.assert_passed()
+
+    def test_inconclusive_warns_but_does_not_raise(self):
+        result = _make_distribution_change_result(Decision.INCONCLUSIVE)
         with pytest.warns(UserWarning, match="INCONCLUSIVE"):
             result.assert_passed()

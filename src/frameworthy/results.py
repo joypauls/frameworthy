@@ -129,18 +129,31 @@ class ChangeResult(ComparisonResult):
 class DistributionResult:
     """Result of a distribution-stability check via Wasserstein distance.
 
-    Instances are returned by `.distribution(...).equivalent(...)` and are
-    not meant to be constructed directly.
+    Instances are returned by `.distribution(...).equivalent(...)` and
+    `.distribution(...).change_greater_than(...)`, and are not meant to be
+    constructed directly.
 
     Unlike `EquivalenceResult`/`ChangeResult`, there's no `before_value`/
     `after_value`/`diff` here: a Wasserstein distance is a single
     non-negative measure of how far apart two distributions are, not a
     difference of a single-number summary, so it doesn't share
-    `ComparisonResult`'s fields or `__str__` layout. The verdict itself is
-    still three-state and still built the same way as `ChangeResult`'s
-    `direction="less_than"`: `within` is treated as an upper bound on an
-    acceptable distance, `passed` if the whole CI is below it, `failed` if
-    the whole CI is above it, `inconclusive` otherwise.
+    `ComparisonResult`'s fields or `__str__` layout. Exactly one of
+    `within`/`threshold` is set, depending on which claim produced this
+    result:
+
+    * `within` (from `.equivalent()`): `within` is treated as an upper
+      bound on an acceptable distance -- built the same way as
+      `ChangeResult`'s `direction="less_than"` -- `passed` if the whole CI
+      is below it, `failed` if the whole CI is above it, `inconclusive`
+      otherwise.
+    * `threshold` (from `.change_greater_than()`): the opposite claim,
+      confirming the distributions have genuinely drifted apart by more
+      than `threshold` -- built the same way as `ChangeResult`'s
+      `direction="greater_than"` -- `passed` if the whole CI is above it,
+      `failed` if the whole CI is below it, `inconclusive` otherwise.
+
+    Either way the verdict is three-state, and `passed`/`assert_passed()`
+    work identically regardless of which claim produced it.
     """
 
     decision: Decision
@@ -148,12 +161,21 @@ class DistributionResult:
     distance: float
     ci_low: float
     ci_high: float
-    within: float
     alpha: float
     n_before: int
     n_after: int
     n_resamples: int
     method: str = "subsampling"
+    within: float | None = None
+    threshold: float | None = None
+
+    def __post_init__(self) -> None:
+        # internal invariant, not user-facing validation: `DistributionResult`
+        # is only ever constructed by `DistributionCheck` itself, from
+        # exactly one claim at a time.
+        assert (self.within is None) != (self.threshold is None), (
+            "DistributionResult requires exactly one of `within`/`threshold`."
+        )
 
     @property
     def passed(self) -> bool:
@@ -161,16 +183,27 @@ class DistributionResult:
         return self.decision == Decision.PASSED
 
     def __str__(self) -> str:
-        ci_pct = round((1 - 2 * self.alpha) * 100)
-        rows = [
-            ("distance", f"{self.distance:.4g}"),
-            (f"{ci_pct}% CI", f"[{self.ci_low:.4g}, {self.ci_high:.4g}]"),
-            ("within", f"{self.within:.4g}"),
-        ]
+        header = f"{self.decision.value.upper()}: wasserstein({self.column})"
+        distance_row = ("distance", f"{self.distance:.4g}")
+
+        if self.within is not None:
+            ci_pct = round((1 - 2 * self.alpha) * 100)
+            rows = [
+                distance_row,
+                (f"{ci_pct}% CI", f"[{self.ci_low:.4g}, {self.ci_high:.4g}]"),
+                ("within", f"{self.within:.4g}"),
+            ]
+        else:
+            bound_pct = round((1 - self.alpha) * 100)
+            rows = [
+                distance_row,
+                (f"{bound_pct}% one-sided lower bound", f"{self.ci_low:.4g}"),
+                ("threshold (change_greater_than)", f"{self.threshold:.4g}"),
+            ]
+
         width = max(len(label) for label, _ in rows)
         body = "\n".join(f"  {label.ljust(width)} = {value}" for label, value in rows)
 
-        header = f"{self.decision.value.upper()}: wasserstein({self.column})"
         footer = (
             f"  alpha = {self.alpha:g}, unpaired, n_before={self.n_before}, "
             f"n_after={self.n_after}, method={self.method}"
