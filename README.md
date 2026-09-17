@@ -9,7 +9,7 @@
 [![Tests](https://github.com/joypauls/frameworthy/actions/workflows/tests.yml/badge.svg)](https://github.com/joypauls/frameworthy/actions/workflows/tests.yml)
 [![codecov](https://codecov.io/gh/joypauls/frameworthy/branch/main/graph/badge.svg?token=npu0JtY8hc)](https://codecov.io/gh/joypauls/frameworthy)
 
-Lightweight statistical validation library for data changes. Built for engineers and scientists who need to validate data changes with statistical rigor. Works in data validation pipelines, in tests with assertions, or in exploratory settings with easily inspectable results.
+Frameworthy is a lightweight, dataframe-first library for statistically validating changes in data and metrics. Built for engineers and scientists who need reliable checks with statistical rigor, but are not looking to adopt a heavy platform. Works in data validation pipelines, in tests with assertions, or in exploratory settings with easily inspectable results.
 
 <div align="center"><img src="docs/public/banner.png" width="600"></div>
 
