@@ -4,8 +4,8 @@ import numpy as np
 import pytest
 from scipy import stats as scipy_stats
 
-from frameworthy._bootstrap import bootstrap_diff_ci
-from frameworthy._errors import InvalidDataError
+from frameworthy._bootstrap import bootstrap_diff_ci, subsample_bootstrap_ci
+from frameworthy._errors import InvalidDataError, UsageError
 
 
 class TestBootstrapDiffCiValidation:
@@ -246,3 +246,119 @@ class TestBootstrapDiffCiScipyWiring:
         )
 
         assert captured["confidence_level"] == pytest.approx(0.95)
+
+
+class TestSubsampleBootstrapCi:
+    """Unlike `bootstrap_diff_ci`, this bootstrap is entirely our own
+    mechanics (no `scipy.stats.bootstrap` underneath), so it's worth
+    testing more directly rather than just checking wiring. `_distribution.py`
+    covers the Wasserstein-specific end-to-end behavior (clipping,
+    validation messages); these tests use a simple, cheap `statistic_func`
+    to isolate the generic subsampling/rescaling mechanics themselves.
+    """
+
+    @staticmethod
+    def _mean_diff(before: np.ndarray, after: np.ndarray) -> float:
+        return float(np.mean(after) - np.mean(before))
+
+    def test_statistic_is_the_plain_observed_value(self):
+        rng = np.random.default_rng(0)
+        before = rng.normal(loc=10.0, scale=1.0, size=100)
+        after = rng.normal(loc=12.0, scale=1.0, size=100)
+
+        statistic, _, _ = subsample_bootstrap_ci(
+            before,
+            after,
+            self._mean_diff,
+            alpha=0.05,
+            n_resamples=200,
+            rng=rng,
+        )
+
+        assert statistic == pytest.approx(self._mean_diff(before, after))
+
+    def test_is_reproducible_with_seeded_rng(self):
+        before = np.linspace(0.0, 10.0, 50)
+        after = np.linspace(1.0, 11.0, 50)
+
+        result_a = subsample_bootstrap_ci(
+            before,
+            after,
+            self._mean_diff,
+            alpha=0.05,
+            n_resamples=300,
+            rng=np.random.default_rng(42),
+        )
+        result_b = subsample_bootstrap_ci(
+            before,
+            after,
+            self._mean_diff,
+            alpha=0.05,
+            n_resamples=300,
+            rng=np.random.default_rng(42),
+        )
+
+        assert result_a == result_b
+
+    def test_resamples_before_and_after_independently(self):
+        """There's no paired mode: resampling `before`/`after` at different
+        sizes must work, which is only possible if they're drawn
+        independently rather than sharing indices.
+        """
+        rng = np.random.default_rng(0)
+        before = rng.normal(loc=0.0, scale=1.0, size=40)
+        after = rng.normal(loc=5.0, scale=1.0, size=70)
+
+        statistic, ci_low, ci_high = subsample_bootstrap_ci(
+            before,
+            after,
+            self._mean_diff,
+            alpha=0.05,
+            n_resamples=300,
+            rng=rng,
+        )
+
+        assert statistic == pytest.approx(self._mean_diff(before, after), abs=0.5)
+        assert ci_low < statistic < ci_high
+
+    def test_does_not_clip_to_any_domain(self):
+        """Domain-specific clipping (e.g. a distance can't be negative) is
+        the caller's responsibility, not this function's -- with a
+        statistic that can go negative and a clear negative shift, the
+        interval should be allowed to sit entirely below 0.
+        """
+        rng = np.random.default_rng(1)
+        before = rng.normal(loc=10.0, scale=0.5, size=200)
+        after = rng.normal(loc=5.0, scale=0.5, size=200)
+
+        _, ci_low, ci_high = subsample_bootstrap_ci(
+            before,
+            after,
+            self._mean_diff,
+            alpha=0.05,
+            n_resamples=500,
+            rng=rng,
+        )
+
+        assert ci_low < 0.0
+        assert ci_high < 0.0
+
+    def test_rejects_invalid_alpha(self):
+        rng = np.random.default_rng(0)
+        before = rng.normal(size=20)
+        after = rng.normal(size=20)
+
+        with pytest.raises(UsageError, match="alpha"):
+            subsample_bootstrap_ci(
+                before, after, self._mean_diff, alpha=0.6, n_resamples=100, rng=rng
+            )
+
+    def test_rejects_non_positive_n_resamples(self):
+        rng = np.random.default_rng(0)
+        before = rng.normal(size=20)
+        after = rng.normal(size=20)
+
+        with pytest.raises(UsageError, match="n_resamples"):
+            subsample_bootstrap_ci(
+                before, after, self._mean_diff, alpha=0.05, n_resamples=0, rng=rng
+            )

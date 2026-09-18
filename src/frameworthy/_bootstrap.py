@@ -1,25 +1,28 @@
-"""Generic bootstrap confidence interval for a difference `after - before`.
+"""Bootstrap confidence intervals for two-sample statistics.
 
-Split out from `_intervals.py`: that module owns the analytical-vs-bootstrap
-dispatch (`diff_ci`) shared by every built-in metric; this module owns the
-actual bootstrap mechanics, delegating the resampling itself to
-`scipy.stats.bootstrap` rather than maintaining a hand-rolled percentile
-bootstrap.
+Split out from `_intervals.py`/`_distribution.py`: those modules own
+*what* is being estimated (a difference `after - before`, or a Wasserstein
+distance) and any domain-specific validation/dispatch; this module owns
+the actual bootstrap mechanics, so there's exactly one place that knows how
+to resample. It provides two independent strategies, each suited to a
+different kind of statistic:
 
-`method="BCa"` (bias-corrected and accelerated) is used by default rather
-than a plain percentile bootstrap: it corrects for both median bias and
-skewness in the bootstrap distribution, which generally gives better
-coverage than the percentile method without requiring any extra input from
-the caller. See Efron & Tibshirani (1993), *An Introduction to the
-Bootstrap*.
+* `bootstrap_diff_ci`: an ordinary bootstrap CI for the difference of a
+  statistic (e.g. `.mean()`/`.median()`/`.custom()`), delegating the
+  resampling itself to `scipy.stats.bootstrap` with `method="BCa"`
+  (bias-corrected and accelerated) rather than maintaining a hand-rolled
+  percentile bootstrap. BCa corrects for both median bias and skewness in
+  the bootstrap distribution, which generally gives better coverage than
+  the percentile method without requiring any extra input from the caller.
+  See Efron & Tibshirani (1993), *An Introduction to the Bootstrap*.
 
-Note this is a different (and separate) concern from the Wasserstein/
-distribution-check bootstrap in `_distribution.py`: that one specifically
-needs an m-out-of-n/subsampling strategy because the Wasserstein distance
-statistic is non-smooth at its zero boundary, which `scipy.stats.bootstrap`
-doesn't implement, so it isn't routed through this module. `bootstrap_diff_ci`
-here is for ordinary "difference of a statistic" claims like `.mean()`/
-`.median()`/`.custom()`.
+* `subsample_bootstrap_ci`: an m-out-of-n/subsampling bootstrap (Politis &
+  Romano, 1994) for statistics that are non-negative and/or non-smooth at
+  a boundary of their parameter space (e.g. a distance that's exactly 0
+  when two distributions are identical), where the ordinary n-out-of-n
+  bootstrap `scipy.stats.bootstrap` implements is known to be
+  *inconsistent*. Used by `_distribution.py`'s Wasserstein distance check;
+  see that module for why.
 """
 
 import warnings
@@ -37,6 +40,13 @@ from ._validation import (
 )
 
 StatisticFunc = Callable[..., np.ndarray]
+TwoSampleStatisticFunc = Callable[[np.ndarray, np.ndarray], float]
+
+# subsample size grows like n**_SUBSAMPLE_EXPONENT: slower than n (so
+# m / n -> 0, required for subsampling/m-out-of-n consistency) but still
+# growing without bound as n -> infinity
+_DEFAULT_SUBSAMPLE_EXPONENT = 0.6
+_DEFAULT_MIN_SUBSAMPLE_SIZE = 2
 
 
 def bootstrap_diff_ci(
@@ -125,3 +135,78 @@ def bootstrap_diff_ci(
         )
 
     return Interval(observed, float(ci_low), float(ci_high))
+
+
+def _subsample_size(n: int, *, exponent: float, min_size: int) -> int:
+    return max(min_size, int(n**exponent))
+
+
+def subsample_bootstrap_ci(
+    before: np.ndarray,
+    after: np.ndarray,
+    statistic_func: TwoSampleStatisticFunc,
+    *,
+    alpha: float,
+    n_resamples: int,
+    rng: np.random.Generator,
+    subsample_exponent: float = _DEFAULT_SUBSAMPLE_EXPONENT,
+    min_subsample_size: int = _DEFAULT_MIN_SUBSAMPLE_SIZE,
+) -> Interval:
+    """
+    m-out-of-n (subsampling) bootstrap CI for a two-sample statistic.
+
+    Unlike `bootstrap_diff_ci`, this doesn't assume `statistic_func` is a
+    difference of a per-side summary, or that it's smooth/well-behaved
+    everywhere in its parameter space: `statistic_func(before, after)` can
+    be any scalar-valued function of the two full samples (e.g. a distance
+    metric), which is also why this resamples smaller subsamples of size
+    `m < n` from each side rather than full-size (`n`-out-of-`n`)
+    resamples. That's what makes this valid at boundary/non-smooth points
+    where the ordinary bootstrap (including `bootstrap_diff_ci`'s BCa
+    method) is inconsistent -- see Politis & Romano (1994) -- provided `m`
+    grows with `n` but at a slower rate (`m / n -> 0`, guaranteed here by
+    `subsample_exponent < 1`).
+
+    `before` and `after` are always resampled independently (there's no
+    paired mode for this style of bootstrap in this library yet).
+
+    Returns `(statistic, ci_low, ci_high)` where `statistic` is the
+    observed `statistic_func(before, after)` and the interval is a
+    `(1 - 2 * alpha)` one-sided-equivalent interval (mirroring the `alpha`
+    convention used everywhere else in this library). This does *not*
+    clip the interval to any particular domain (e.g. non-negativity) --
+    that's the caller's responsibility, since it depends on what
+    `statistic_func` actually measures.
+    """
+    validate_alpha(alpha)
+    validate_n_resamples(n_resamples)
+
+    n_before, n_after = len(before), len(after)
+    statistic = float(statistic_func(before, after))
+
+    m_before = _subsample_size(
+        n_before, exponent=subsample_exponent, min_size=min_subsample_size
+    )
+    m_after = _subsample_size(
+        n_after, exponent=subsample_exponent, min_size=min_subsample_size
+    )
+    n_eff = (n_before * n_after) / (n_before + n_after)
+    m_eff = (m_before * m_after) / (m_before + m_after)
+
+    before_idx = rng.integers(0, n_before, size=(n_resamples, m_before))
+    after_idx = rng.integers(0, n_after, size=(n_resamples, m_after))
+
+    subsample_statistics = np.array(
+        [
+            statistic_func(before[before_idx[i]], after[after_idx[i]])
+            for i in range(n_resamples)
+        ]
+    )
+
+    deviations = np.sqrt(m_eff) * (subsample_statistics - statistic)
+    q_low, q_high = np.percentile(deviations, [100 * alpha, 100 * (1 - alpha)])
+
+    ci_low = statistic - q_high / np.sqrt(n_eff)
+    ci_high = statistic - q_low / np.sqrt(n_eff)
+
+    return Interval(statistic, float(ci_low), float(ci_high))
