@@ -221,7 +221,7 @@ class TestSameDataframeComparison:
             }
         )
 
-        mean_check = fw.check(df).mean("score_after", before="score_before")
+        mean_check = fw.check(df).mean("score_after", paired_column="score_before")
 
         assert mean_check._paired is True
         assert (mean_check._after_values - mean_check._before_values == 1.0).all()
@@ -230,29 +230,29 @@ class TestSameDataframeComparison:
         df = frame_factory({"score": [1.0, 2.0, 3.0]})
 
         with pytest.raises(fw.UsageError, match="different column"):
-            fw.check(df).mean("score", before="score")
+            fw.check(df).mean("score", paired_column="score")
 
-    def test_requires_before_kwarg_for_single_dataframe(self, frame_factory):
+    def test_requires_paired_column_kwarg_for_single_dataframe(self, frame_factory):
         df = frame_factory({"score_before": [1.0, 2.0], "score_after": [2.0, 3.0]})
 
-        with pytest.raises(fw.UsageError, match="before="):
+        with pytest.raises(fw.UsageError, match="paired_column="):
             fw.check(df).mean("score_after")
 
-    def test_rejects_before_kwarg_for_two_dataframe_mode(self, frame_factory):
+    def test_rejects_paired_column_kwarg_for_two_dataframe_mode(self, frame_factory):
         before = frame_factory({"revenue": [1.0, 2.0]})
         after = frame_factory({"revenue": [2.0, 3.0]})
 
         with pytest.raises(fw.UsageError, match="same-dataframe"):
-            fw.check(after, before=before).mean("revenue", before="revenue")
+            fw.check(after, before=before).mean("revenue", paired_column="revenue")
 
     def test_missing_column_raises_key_error(self, frame_factory):
         df = frame_factory({"score_before": [1.0, 2.0], "score_after": [2.0, 3.0]})
 
         with pytest.raises(fw.ColumnNotFoundError):
-            fw.check(df).mean("missing_col", before="score_before")
+            fw.check(df).mean("missing_col", paired_column="score_before")
 
         with pytest.raises(fw.ColumnNotFoundError):
-            fw.check(df).mean("score_after", before="missing_col")
+            fw.check(df).mean("score_after", paired_column="missing_col")
 
     def test_null_only_column_raises_value_error(self, frame_factory):
         df = frame_factory(
@@ -260,7 +260,7 @@ class TestSameDataframeComparison:
         )
 
         with pytest.raises(fw.InvalidDataError, match="No usable"):
-            fw.check(df).mean("score_after", before="score_before")
+            fw.check(df).mean("score_after", paired_column="score_before")
 
     def test_drops_rows_with_nulls_in_either_column(self, frame_factory):
         df = frame_factory(
@@ -270,7 +270,7 @@ class TestSameDataframeComparison:
             }
         )
 
-        mean_check = fw.check(df).mean("score_after", before="score_before")
+        mean_check = fw.check(df).mean("score_after", paired_column="score_before")
 
         assert mean_check._before_values.tolist() == [10.0, 40.0]
         assert mean_check._after_values.tolist() == [11.0, 41.0]
@@ -279,7 +279,7 @@ class TestSameDataframeComparison:
         df = frame_factory({"score_before": [10.0, None], "score_after": [11.0, None]})
 
         with pytest.raises(fw.InvalidDataError, match="At least 2"):
-            fw.check(df).mean("score_after", before="score_before")
+            fw.check(df).mean("score_after", paired_column="score_before")
 
 
 class TestRateSpecific:

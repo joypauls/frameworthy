@@ -713,7 +713,7 @@ class Check:
             raise UsageError(
                 "`paired_by` requires a separate `before` dataframe passed to "
                 "`check()`. For same-dataframe comparisons, pass "
-                "`before=<column name>` to `.mean()` instead."
+                "`paired_column=<column name>` to `.mean()` instead."
             )
 
         self._paired_by = _normalize_keys(paired_by) if paired_by is not None else None
@@ -722,35 +722,35 @@ class Check:
             assert_unique_keys(self._after, self._paired_by, "after")
 
     def _extract_before_after(
-        self, column: str, before: str | None, metric: str
+        self, column: str, paired_column: str | None, metric: str
     ) -> tuple[np.ndarray, np.ndarray, bool]:
         """Resolve `before`/`after` values for `column`, shared by `.mean()`
         and `.rate()`. `metric` (e.g. `"mean"`, `"rate"`) is only used to
         name the calling method in error messages.
         """
         if self._before is None:
-            if before is None:
+            if paired_column is None:
                 raise UsageError(
                     f"`check()` was given a single dataframe; `.{metric}()` "
-                    "requires `before=<column name>` to compare two columns "
-                    "in that dataframe."
+                    "requires `paired_column=<column name>` to compare two "
+                    "columns in that dataframe."
                 )
-            if before == column:
+            if paired_column == column:
                 raise UsageError(
-                    "`before` must name a different column than the one being "
-                    f"compared, got `{column}` for both."
+                    "`paired_column` must name a different column than the "
+                    f"one being compared, got `{column}` for both."
                 )
 
             before_values, after_values = paired_values_from_columns(
-                self._after, before, column, "df"
+                self._after, paired_column, column, "df"
             )
             return before_values, after_values, True
 
-        if before is not None:
+        if paired_column is not None:
             raise UsageError(
-                f"`before=` on `.{metric}()` is only used for same-dataframe "
-                "comparisons; pass a separate `before` dataframe to `check()` "
-                "instead."
+                f"`paired_column=` on `.{metric}()` is only used for "
+                "same-dataframe comparisons; pass a separate `before` "
+                "dataframe to `check()` instead."
             )
 
         return values_from_two_frames(
@@ -761,7 +761,7 @@ class Check:
         self,
         cls: type[MetricCheckT],
         column: str,
-        before: str | None,
+        paired_column: str | None,
         metric: str,
         **extra_kwargs: object,
     ) -> MetricCheckT:
@@ -772,7 +772,7 @@ class Check:
         for `CustomCheck`'s `name`/`statistic_func`.
         """
         before_values, after_values, paired = self._extract_before_after(
-            column, before, metric
+            column, paired_column, metric
         )
         return cls(
             column=column,
@@ -782,47 +782,47 @@ class Check:
             **extra_kwargs,
         )
 
-    def mean(self, column: str, before: str | None = None) -> MeanCheck:
+    def mean(self, column: str, paired_column: str | None = None) -> MeanCheck:
         """Select a column and compare its mean between `before` and `after`.
 
-        If `check()` was given a single dataframe, pass `before=<column
-        name>` here to compare two columns within that same dataframe as
-        paired observations (row-by-row). Otherwise, `before` must be
-        omitted and `column` is compared between the two dataframes passed
-        to `check()`.
+        If `check()` was given a single dataframe, pass `paired_column=
+        <column name>` here to compare two columns within that same
+        dataframe as paired observations (row-by-row). Otherwise,
+        `paired_column` must be omitted and `column` is compared between
+        the two dataframes passed to `check()`.
         """
-        return self._metric_check(MeanCheck, column, before, "mean")
+        return self._metric_check(MeanCheck, column, paired_column, "mean")
 
-    def rate(self, column: str, before: str | None = None) -> RateCheck:
+    def rate(self, column: str, paired_column: str | None = None) -> RateCheck:
         """Select a binary (0/1 or boolean) column and compare its rate
         (proportion) between `before` and `after`.
 
-        If `check()` was given a single dataframe, pass `before=<column
-        name>` here to compare two columns within that same dataframe as
-        paired observations (row-by-row). Otherwise, `before` must be
-        omitted and `column` is compared between the two dataframes passed
-        to `check()`.
+        If `check()` was given a single dataframe, pass `paired_column=
+        <column name>` here to compare two columns within that same
+        dataframe as paired observations (row-by-row). Otherwise,
+        `paired_column` must be omitted and `column` is compared between
+        the two dataframes passed to `check()`.
         """
-        return self._metric_check(RateCheck, column, before, "rate")
+        return self._metric_check(RateCheck, column, paired_column, "rate")
 
-    def median(self, column: str, before: str | None = None) -> MedianCheck:
+    def median(self, column: str, paired_column: str | None = None) -> MedianCheck:
         """Select a column and compare its median between `before` and
         `after`.
 
-        If `check()` was given a single dataframe, pass `before=<column
-        name>` here to compare two columns within that same dataframe as
-        paired observations (row-by-row). Otherwise, `before` must be
-        omitted and `column` is compared between the two dataframes passed
-        to `check()`.
+        If `check()` was given a single dataframe, pass `paired_column=
+        <column name>` here to compare two columns within that same
+        dataframe as paired observations (row-by-row). Otherwise,
+        `paired_column` must be omitted and `column` is compared between
+        the two dataframes passed to `check()`.
         """
-        return self._metric_check(MedianCheck, column, before, "median")
+        return self._metric_check(MedianCheck, column, paired_column, "median")
 
     def custom(
         self,
         column: str,
         statistic_func: StatisticFunc,
         name: str,
-        before: str | None = None,
+        paired_column: str | None = None,
     ) -> CustomCheck:
         """Select a column and compare a user-supplied `statistic_func` of
         it between `before` and `after`.
@@ -833,16 +833,16 @@ class Check:
         `statistic_func`'s requirements (checked eagerly) and `name`'s
         role in result output.
 
-        If `check()` was given a single dataframe, pass `before=<column
-        name>` here to compare two columns within that same dataframe as
-        paired observations (row-by-row). Otherwise, `before` must be
-        omitted and `column` is compared between the two dataframes passed
-        to `check()`.
+        If `check()` was given a single dataframe, pass `paired_column=
+        <column name>` here to compare two columns within that same
+        dataframe as paired observations (row-by-row). Otherwise,
+        `paired_column` must be omitted and `column` is compared between
+        the two dataframes passed to `check()`.
         """
         return self._metric_check(
             CustomCheck,
             column,
-            before,
+            paired_column,
             "custom",
             name=name,
             statistic_func=statistic_func,
@@ -863,7 +863,7 @@ class Check:
                 "`.distribution()` requires two separate dataframes; "
                 "`check()` was given a single dataframe. Distribution "
                 "checks only support independent samples, so there's no "
-                "single-dataframe `before=<column name>` mode like "
+                "single-dataframe `paired_column=<column name>` mode like "
                 "`.mean()`/`.rate()`/`.median()` has."
             )
         if self._paired_by is not None:
@@ -1003,7 +1003,7 @@ def check(
           omitted, `before` and `after` are treated as independent
           samples.
         * omitted, in which case `after` is the only dataframe and
-          `.mean(after_column, before=before_column)` compares two
+          `.mean(after_column, paired_column=before_column)` compares two
           columns within it as paired, row-by-row observations.
           `paired_by` is not valid in this mode.
 
@@ -1026,7 +1026,7 @@ def check(
                 "arrays; got `after` as an array with `before` omitted. "
                 "Arrays have no columns, so there's no single-array "
                 "comparison mode (unlike a single dataframe's "
-                "`before=<column name>` mode)."
+                "`paired_column=<column name>` mode)."
             )
         if not (after_is_array and before_is_array):
             raise UsageError(
