@@ -338,9 +338,9 @@ class MeanCheck(MetricCheck):
     `"analytical"` (a t-interval for paired differences, or a Welch/
     unequal-variance t-interval for independent samples) instead of
     bootstrap resampling. Pass `method="bootstrap"` on any claim method to
-    use percentile bootstrap resampling instead, in which case
-    `n_resamples` and `random_state` control the resampling; both are
-    unused for the analytical path.
+    use BCa (bias-corrected and accelerated) bootstrap resampling instead,
+    in which case `n_resamples` and `random_state` control the resampling;
+    both are unused for the analytical path.
     """
 
     _metric = Metric.MEAN
@@ -361,13 +361,16 @@ class RateCheck(MetricCheck):
     where a Wald/t-style interval on the raw values would collapse to a
     single point despite genuine uncertainty.
 
-    Pass `method="bootstrap"` on any claim method to use percentile
-    bootstrap resampling instead, in which case `n_resamples` and
-    `random_state` control the resampling. Note that the bootstrap path
-    resamples the raw 0/1 values directly, so it does *not* get the
-    boundary-case protection above: a sample with an observed rate of
-    exactly 0 or 1 will still produce a degenerate, zero-width bootstrap
-    interval.
+    Pass `method="bootstrap"` on any claim method to use BCa (bias-corrected
+    and accelerated) bootstrap resampling instead, in which case
+    `n_resamples` and `random_state` control the resampling. Note that the
+    bootstrap path resamples the raw 0/1 values directly, so it doesn't get
+    the boundary-case protection above in the fully degenerate case: if
+    `before` and `after` are both constant (e.g. both all-zero or both
+    all-one, so the bootstrap distribution has no variability at all), the
+    interval collapses to a single point at the observed (zero) difference.
+    A single side at a 0/1 boundary with the other side non-constant is
+    fine; BCa still produces a non-degenerate interval in that case.
     """
 
     _metric = Metric.RATE

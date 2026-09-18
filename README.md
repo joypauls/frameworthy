@@ -96,7 +96,7 @@ Examples:
 
 ### Distribution Checks
 
-`.distribution().equivalent()` doesn't use the percentile bootstrap that powers `.median()`/`.custom()`. The plug-in Wasserstein distance estimator is biased and, right where it matters most (two samples that are actually equivalent, so the true distance is 0 or close to it), the ordinary bootstrap is known to be unreliable at that boundary. Instead, it uses a subsampling/m-out-of-n bootstrap, which stays valid in that case.
+`.distribution().equivalent()` doesn't use the BCa bootstrap that powers `.median()`/`.custom()`. The plug-in Wasserstein distance estimator is biased and, right where it matters most (two samples that are actually equivalent, so the true distance is 0 or close to it), the ordinary bootstrap is known to be unreliable at that boundary. Instead, it uses a subsampling/m-out-of-n bootstrap, which stays valid in that case.
 
 
 ## Development
