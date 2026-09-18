@@ -17,7 +17,15 @@ after_changed_df = pd.read_csv(AFTER_CHANGED_CSV)
 after_unchanged_df = pd.read_csv(AFTER_UNCHANGED_CSV)
 
 
+def array_example():
+    data = fw.sample_normal(shift=0.0)
+    result = fw.check(data.after, before=data.before).mean().equivalent(within=0.2)
+    print(result)
+
+
 def main():
+    array_example()
+
     # passing example: mean of unchanged distribution should be equivalent
     result = (
         fw.check(after_unchanged_df, before=before_df)

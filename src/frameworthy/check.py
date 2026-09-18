@@ -1,5 +1,5 @@
 from collections.abc import Sequence
-from typing import ClassVar, TypeVar
+from typing import ClassVar, TypeVar, overload
 
 import numpy as np
 from narwhals.stable.v2.typing import IntoDataFrame
@@ -13,12 +13,14 @@ from ._arrays import (
 from ._classify import classify_change_bound, classify_equivalence
 from ._constants import (
     DEFAULT_ALPHA,
+    DEFAULT_DISTRIBUTION_N_RESAMPLES,
     DEFAULT_N_RESAMPLES,
     Direction,
     InferenceMethod,
     Metric,
 )
 from ._dataframes import _normalize_keys, assert_unique_keys, to_narwhals_frame
+from ._distribution import wasserstein_distance_ci
 from ._errors import UsageError
 from ._intervals import (
     AnalyticalDiffFunc,
@@ -32,7 +34,7 @@ from ._validation import (
     validate_custom_metric,
     validate_statistic_func,
 )
-from .results import ChangeResult, EquivalenceResult
+from .results import ChangeResult, DistributionResult, EquivalenceResult
 
 
 def _equivalence_result(
@@ -336,9 +338,9 @@ class MeanCheck(MetricCheck):
     `"analytical"` (a t-interval for paired differences, or a Welch/
     unequal-variance t-interval for independent samples) instead of
     bootstrap resampling. Pass `method="bootstrap"` on any claim method to
-    use percentile bootstrap resampling instead, in which case
-    `n_resamples` and `random_state` control the resampling; both are
-    unused for the analytical path.
+    use BCa (bias-corrected and accelerated) bootstrap resampling instead,
+    in which case `n_resamples` and `random_state` control the resampling;
+    both are unused for the analytical path.
     """
 
     _metric = Metric.MEAN
@@ -359,13 +361,16 @@ class RateCheck(MetricCheck):
     where a Wald/t-style interval on the raw values would collapse to a
     single point despite genuine uncertainty.
 
-    Pass `method="bootstrap"` on any claim method to use percentile
-    bootstrap resampling instead, in which case `n_resamples` and
-    `random_state` control the resampling. Note that the bootstrap path
-    resamples the raw 0/1 values directly, so it does *not* get the
-    boundary-case protection above: a sample with an observed rate of
-    exactly 0 or 1 will still produce a degenerate, zero-width bootstrap
-    interval.
+    Pass `method="bootstrap"` on any claim method to use BCa (bias-corrected
+    and accelerated) bootstrap resampling instead, in which case
+    `n_resamples` and `random_state` control the resampling. Note that the
+    bootstrap path resamples the raw 0/1 values directly, so it doesn't get
+    the boundary-case protection above in the fully degenerate case: if
+    `before` and `after` are both constant (e.g. both all-zero or both
+    all-one, so the bootstrap distribution has no variability at all), the
+    interval collapses to a single point at the observed (zero) difference.
+    A single side at a 0/1 boundary with the other side non-constant is
+    fine; BCa still produces a non-degenerate interval in that case.
     """
 
     _metric = Metric.RATE
@@ -517,6 +522,175 @@ class CustomCheck(MetricCheck):
         )
 
 
+def _distribution_result(
+    *,
+    column: str,
+    before_values: np.ndarray,
+    after_values: np.ndarray,
+    alpha: float,
+    n_resamples: int,
+    random_state: int | np.random.Generator | None,
+    direction: Direction,
+    within: float | None,
+    threshold: float | None,
+) -> DistributionResult:
+    """Shared implementation behind `DistributionCheck.equivalent()` and
+    `.change_greater_than()`: run `wasserstein_distance_ci`, classify the
+    resulting CI via `classify_change_bound`, and package everything into a
+    `DistributionResult`. Exactly one of `within`/`threshold` is passed
+    through to the result (see `DistributionResult` for what each means);
+    `direction`/the bound they're classified against always agree.
+    """
+    rng = np.random.default_rng(random_state)
+    distance, ci_low, ci_high = wasserstein_distance_ci(
+        before_values,
+        after_values,
+        alpha=alpha,
+        n_resamples=n_resamples,
+        rng=rng,
+    )
+    bound = within if within is not None else threshold
+    decision = classify_change_bound(ci_low, ci_high, bound, direction=direction)
+
+    return DistributionResult(
+        decision=decision,
+        column=column,
+        distance=distance,
+        ci_low=ci_low,
+        ci_high=ci_high,
+        alpha=alpha,
+        n_before=len(before_values),
+        n_after=len(after_values),
+        n_resamples=n_resamples,
+        within=within,
+        threshold=threshold,
+    )
+
+
+class DistributionCheck:
+    """A check bound to comparing the distribution of one numeric column
+    between two independent samples, using the Wasserstein-1 (earth
+    mover's) distance.
+
+    Returned by `Check.distribution(...)`/`ArrayCheck.distribution(...)`;
+    not meant to be constructed directly.
+
+    Unlike `MeanCheck`/`RateCheck`/`MedianCheck`/`CustomCheck`, this isn't
+    a `MetricCheck` subclass: it only supports independent (unpaired)
+    samples (there's no paired mode, no `method=` switch). It offers
+    `.equivalent()` and `.change_greater_than()`, but not
+    `.change_less_than()` -- see that method's docstring for why. See
+    `frameworthy._distribution` for why its uncertainty estimate uses a
+    subsampling/m-out-of-n bootstrap rather than the ordinary percentile
+    bootstrap used elsewhere in this library.
+    """
+
+    def __init__(
+        self,
+        column: str,
+        before_values: np.ndarray,
+        after_values: np.ndarray,
+    ) -> None:
+        self._column = column
+        self._before_values = np.asarray(before_values, dtype=float)
+        self._after_values = np.asarray(after_values, dtype=float)
+
+    def equivalent(
+        self,
+        within: float,
+        *,
+        alpha: float = DEFAULT_ALPHA,
+        n_resamples: int = DEFAULT_DISTRIBUTION_N_RESAMPLES,
+        random_state: int | np.random.Generator | None = None,
+    ) -> DistributionResult:
+        """Test whether `before` and `after` come from the same
+        distribution, within a Wasserstein distance of `within` (in the
+        column's native units).
+
+        Builds an m-out-of-n bootstrap confidence interval for the
+        Wasserstein distance, then classifies it against `within` the same
+        way `.change_less_than()` classifies a one-sided upper bound:
+        `passed` if the whole interval is below `within`, `failed` if it's
+        entirely above `within`, `inconclusive` otherwise. `within` must
+        be positive.
+        """
+        if within <= 0:
+            raise UsageError(f"`within` must be positive, got {within}.")
+
+        return _distribution_result(
+            column=self._column,
+            before_values=self._before_values,
+            after_values=self._after_values,
+            alpha=alpha,
+            n_resamples=n_resamples,
+            random_state=random_state,
+            direction="less_than",
+            within=within,
+            threshold=None,
+        )
+
+    def change_greater_than(
+        self,
+        threshold: float,
+        *,
+        alpha: float = DEFAULT_ALPHA,
+        n_resamples: int = DEFAULT_DISTRIBUTION_N_RESAMPLES,
+        random_state: int | np.random.Generator | None = None,
+    ) -> DistributionResult:
+        """Rule out that `before` and `after` are within a Wasserstein
+        distance of `threshold` of each other -- i.e. confirm the
+        distributions have genuinely drifted apart by more than
+        `threshold` (in the column's native units).
+
+        This is the opposite claim from `.equivalent()`: it builds the
+        same m-out-of-n bootstrap confidence interval for the Wasserstein
+        distance, then classifies it against `threshold` as a one-sided
+        lower bound: `passed` if the whole interval is above `threshold`
+        (the drift is confirmed), `failed` if it's entirely below
+        `threshold`, `inconclusive` otherwise. `threshold` must be
+        non-negative, since a distance can't be negative.
+        """
+        if threshold < 0:
+            raise UsageError(f"`threshold` must be non-negative, got {threshold}.")
+
+        return _distribution_result(
+            column=self._column,
+            before_values=self._before_values,
+            after_values=self._after_values,
+            alpha=alpha,
+            n_resamples=n_resamples,
+            random_state=random_state,
+            direction="greater_than",
+            within=None,
+            threshold=threshold,
+        )
+
+    def change_less_than(
+        self,
+        threshold: float,
+        *,
+        alpha: float = DEFAULT_ALPHA,
+        n_resamples: int = DEFAULT_DISTRIBUTION_N_RESAMPLES,
+        random_state: int | np.random.Generator | None = None,
+    ) -> DistributionResult:
+        """Not supported: raises `UsageError` unconditionally.
+
+        A Wasserstein distance can never be negative, so "rule out that
+        the distance is `threshold` or larger" is exactly the same claim
+        as `.equivalent(within=threshold)` -- there's no separate
+        `.change_less_than()` claim to make here, unlike `MetricCheck`
+        (where a difference can be positive or negative). Defined as a
+        real method (rather than left undefined) so calling it fails with
+        a clear, actionable message instead of a plain `AttributeError`.
+        """
+        raise UsageError(
+            "`.change_less_than()` isn't supported for distribution checks: "
+            "since a Wasserstein distance can't be negative, ruling out that "
+            "it's `threshold` or larger is exactly the same claim as "
+            "`.equivalent(within=threshold)`. Use `.equivalent()` instead."
+        )
+
+
 MetricCheckT = TypeVar("MetricCheckT", bound=MetricCheck)
 
 
@@ -539,7 +713,7 @@ class Check:
             raise UsageError(
                 "`paired_by` requires a separate `before` dataframe passed to "
                 "`check()`. For same-dataframe comparisons, pass "
-                "`before=<column name>` to `.mean()` instead."
+                "`paired_column=<column name>` to `.mean()` instead."
             )
 
         self._paired_by = _normalize_keys(paired_by) if paired_by is not None else None
@@ -548,35 +722,35 @@ class Check:
             assert_unique_keys(self._after, self._paired_by, "after")
 
     def _extract_before_after(
-        self, column: str, before: str | None, metric: str
+        self, column: str, paired_column: str | None, metric: str
     ) -> tuple[np.ndarray, np.ndarray, bool]:
         """Resolve `before`/`after` values for `column`, shared by `.mean()`
         and `.rate()`. `metric` (e.g. `"mean"`, `"rate"`) is only used to
         name the calling method in error messages.
         """
         if self._before is None:
-            if before is None:
+            if paired_column is None:
                 raise UsageError(
                     f"`check()` was given a single dataframe; `.{metric}()` "
-                    "requires `before=<column name>` to compare two columns "
-                    "in that dataframe."
+                    "requires `paired_column=<column name>` to compare two "
+                    "columns in that dataframe."
                 )
-            if before == column:
+            if paired_column == column:
                 raise UsageError(
-                    "`before` must name a different column than the one being "
-                    f"compared, got `{column}` for both."
+                    "`paired_column` must name a different column than the "
+                    f"one being compared, got `{column}` for both."
                 )
 
             before_values, after_values = paired_values_from_columns(
-                self._after, before, column, "df"
+                self._after, paired_column, column, "df"
             )
             return before_values, after_values, True
 
-        if before is not None:
+        if paired_column is not None:
             raise UsageError(
-                f"`before=` on `.{metric}()` is only used for same-dataframe "
-                "comparisons; pass a separate `before` dataframe to `check()` "
-                "instead."
+                f"`paired_column=` on `.{metric}()` is only used for "
+                "same-dataframe comparisons; pass a separate `before` "
+                "dataframe to `check()` instead."
             )
 
         return values_from_two_frames(
@@ -587,7 +761,7 @@ class Check:
         self,
         cls: type[MetricCheckT],
         column: str,
-        before: str | None,
+        paired_column: str | None,
         metric: str,
         **extra_kwargs: object,
     ) -> MetricCheckT:
@@ -598,7 +772,7 @@ class Check:
         for `CustomCheck`'s `name`/`statistic_func`.
         """
         before_values, after_values, paired = self._extract_before_after(
-            column, before, metric
+            column, paired_column, metric
         )
         return cls(
             column=column,
@@ -608,47 +782,47 @@ class Check:
             **extra_kwargs,
         )
 
-    def mean(self, column: str, before: str | None = None) -> MeanCheck:
+    def mean(self, column: str, paired_column: str | None = None) -> MeanCheck:
         """Select a column and compare its mean between `before` and `after`.
 
-        If `check()` was given a single dataframe, pass `before=<column
-        name>` here to compare two columns within that same dataframe as
-        paired observations (row-by-row). Otherwise, `before` must be
-        omitted and `column` is compared between the two dataframes passed
-        to `check()`.
+        If `check()` was given a single dataframe, pass `paired_column=
+        <column name>` here to compare two columns within that same
+        dataframe as paired observations (row-by-row). Otherwise,
+        `paired_column` must be omitted and `column` is compared between
+        the two dataframes passed to `check()`.
         """
-        return self._metric_check(MeanCheck, column, before, "mean")
+        return self._metric_check(MeanCheck, column, paired_column, "mean")
 
-    def rate(self, column: str, before: str | None = None) -> RateCheck:
+    def rate(self, column: str, paired_column: str | None = None) -> RateCheck:
         """Select a binary (0/1 or boolean) column and compare its rate
         (proportion) between `before` and `after`.
 
-        If `check()` was given a single dataframe, pass `before=<column
-        name>` here to compare two columns within that same dataframe as
-        paired observations (row-by-row). Otherwise, `before` must be
-        omitted and `column` is compared between the two dataframes passed
-        to `check()`.
+        If `check()` was given a single dataframe, pass `paired_column=
+        <column name>` here to compare two columns within that same
+        dataframe as paired observations (row-by-row). Otherwise,
+        `paired_column` must be omitted and `column` is compared between
+        the two dataframes passed to `check()`.
         """
-        return self._metric_check(RateCheck, column, before, "rate")
+        return self._metric_check(RateCheck, column, paired_column, "rate")
 
-    def median(self, column: str, before: str | None = None) -> MedianCheck:
+    def median(self, column: str, paired_column: str | None = None) -> MedianCheck:
         """Select a column and compare its median between `before` and
         `after`.
 
-        If `check()` was given a single dataframe, pass `before=<column
-        name>` here to compare two columns within that same dataframe as
-        paired observations (row-by-row). Otherwise, `before` must be
-        omitted and `column` is compared between the two dataframes passed
-        to `check()`.
+        If `check()` was given a single dataframe, pass `paired_column=
+        <column name>` here to compare two columns within that same
+        dataframe as paired observations (row-by-row). Otherwise,
+        `paired_column` must be omitted and `column` is compared between
+        the two dataframes passed to `check()`.
         """
-        return self._metric_check(MedianCheck, column, before, "median")
+        return self._metric_check(MedianCheck, column, paired_column, "median")
 
     def custom(
         self,
         column: str,
         statistic_func: StatisticFunc,
         name: str,
-        before: str | None = None,
+        paired_column: str | None = None,
     ) -> CustomCheck:
         """Select a column and compare a user-supplied `statistic_func` of
         it between `before` and `after`.
@@ -659,55 +833,63 @@ class Check:
         `statistic_func`'s requirements (checked eagerly) and `name`'s
         role in result output.
 
-        If `check()` was given a single dataframe, pass `before=<column
-        name>` here to compare two columns within that same dataframe as
-        paired observations (row-by-row). Otherwise, `before` must be
-        omitted and `column` is compared between the two dataframes passed
-        to `check()`.
+        If `check()` was given a single dataframe, pass `paired_column=
+        <column name>` here to compare two columns within that same
+        dataframe as paired observations (row-by-row). Otherwise,
+        `paired_column` must be omitted and `column` is compared between
+        the two dataframes passed to `check()`.
         """
         return self._metric_check(
             CustomCheck,
             column,
-            before,
+            paired_column,
             "custom",
             name=name,
             statistic_func=statistic_func,
         )
 
+    def distribution(self, column: str) -> DistributionCheck:
+        """Select a numeric column and compare its distribution between
+        `before` and `after`, via `DistributionCheck.equivalent()`.
 
-def check(
-    after: IntoDataFrame,
-    before: IntoDataFrame | None = None,
-    paired_by: str | Sequence[str] | None = None,
-) -> Check:
-    """Start a statistical check comparing `before` and `after` data.
+        Unlike `.mean()`/`.rate()`/`.median()`/`.custom()`, this only
+        supports independent samples: `check()` must have been given two
+        separate dataframes, and without `paired_by` (both of those
+        pairing modes are for correlated/matched observations, which this
+        first slice doesn't support).
+        """
+        if self._before is None:
+            raise UsageError(
+                "`.distribution()` requires two separate dataframes; "
+                "`check()` was given a single dataframe. Distribution "
+                "checks only support independent samples, so there's no "
+                "single-dataframe `paired_column=<column name>` mode like "
+                "`.mean()`/`.rate()`/`.median()` has."
+            )
+        if self._paired_by is not None:
+            raise UsageError(
+                "`.distribution()` only supports independent samples; it "
+                "can't be used with `paired_by`."
+            )
 
-    `before` may be:
-
-    * a separate dataframe, compared column-by-column with `after` via
-      `.mean(column)`. If `paired_by` is given, `before` and `after` are
-      aligned on that key (or keys) first; both sides must have at most
-      one row per key value. If `paired_by` is omitted, `before` and
-      `after` are treated as independent samples.
-    * omitted, in which case `after` is the only dataframe and
-      `.mean(after_column, before=before_column)` compares two columns
-      within it as paired, row-by-row observations. `paired_by` is not
-      valid in this mode.
-
-    For two 1-D numpy arrays of already-extracted metric values, use
-    `check_arrays(...)` instead.
-    """
-    return Check(after=after, before=before, paired_by=paired_by)
+        before_values, after_values, paired = self._extract_before_after(
+            column, None, "distribution"
+        )
+        assert not paired  # guaranteed by the `paired_by` check above
+        return DistributionCheck(
+            column=column, before_values=before_values, after_values=after_values
+        )
 
 
 class ArrayCheck:
     """Entry point for comparing two 1-D numpy arrays of already-extracted
     metric values, as independent (unpaired) samples.
 
-    Returned by `check_arrays(...)`; not meant to be constructed directly.
-    Unlike `Check`, there's no dataframe/column concept here, so there's
-    also no paired mode -- arrays have no key to align pairs by, which is
-    why `check_arrays()` (unlike `check()`) has no `paired_by` parameter.
+    Returned by `check(...)` when `after`/`before` are numpy arrays rather
+    than dataframes; not meant to be constructed directly. Unlike `Check`,
+    there's no dataframe/column concept here, so there's also no paired
+    mode -- arrays have no key to align pairs by, which is why `check()`
+    rejects `paired_by` for array input.
     """
 
     def __init__(self, after: np.ndarray, before: np.ndarray) -> None:
@@ -720,7 +902,7 @@ class ArrayCheck:
 
         `column` is used purely as a display label (e.g. shows up as
         "mean(column)" in results/messages) -- there's nothing to select,
-        since both arrays were already given in full to `check_arrays()`.
+        since both arrays were already given in full to `check()`.
         """
         return MeanCheck(
             column=column,
@@ -771,14 +953,91 @@ class ArrayCheck:
             statistic_func=statistic_func,
         )
 
+    def distribution(self, column: str = "value") -> DistributionCheck:
+        """Compare the distribution of the two arrays via
+        `DistributionCheck.equivalent()`.
 
-def check_arrays(after: np.ndarray, before: np.ndarray) -> ArrayCheck:
-    """Start a statistical check comparing two 1-D numpy arrays of
-    already-extracted metric values.
+        `column` is used purely as a display label; see `.mean()`. Arrays
+        are always independent samples already (there's no paired mode for
+        arrays), so there's nothing extra to validate here, unlike
+        `Check.distribution()`.
+        """
+        return DistributionCheck(
+            column=column,
+            before_values=self._before_values,
+            after_values=self._after_values,
+        )
 
-    Always treated as independent samples -- there's no equivalent of
-    `paired_by` since arrays have no key column to align pairs by. Use
-    `check(...)` instead for dataframe input, which supports both paired
-    and unpaired comparisons.
+
+@overload
+def check(
+    after: np.ndarray,
+    before: np.ndarray,
+    paired_by: None = None,
+) -> ArrayCheck: ...
+
+
+@overload
+def check(
+    after: IntoDataFrame,
+    before: IntoDataFrame | None = None,
+    paired_by: str | Sequence[str] | None = None,
+) -> Check: ...
+
+
+def check(
+    after: IntoDataFrame | np.ndarray,
+    before: IntoDataFrame | np.ndarray | None = None,
+    paired_by: str | Sequence[str] | None = None,
+) -> Check | ArrayCheck:
+    """Start a statistical check comparing `before` and `after` data.
+
+    `after`/`before` may be:
+
+    * dataframes (the common case). `before` may then be:
+
+        * a separate dataframe, compared column-by-column with `after`
+          via `.mean(column)`. If `paired_by` is given, `before` and
+          `after` are aligned on that key (or keys) first; both sides
+          must have at most one row per key value. If `paired_by` is
+          omitted, `before` and `after` are treated as independent
+          samples.
+        * omitted, in which case `after` is the only dataframe and
+          `.mean(after_column, paired_column=before_column)` compares two
+          columns within it as paired, row-by-row observations.
+          `paired_by` is not valid in this mode.
+
+    * two 1-D numpy arrays of already-extracted metric values, always
+      treated as independent (unpaired) samples. Both `after` and
+      `before` must be arrays together (there's no single-array mode,
+      since arrays have no columns to compare within themselves), and
+      `paired_by` isn't valid -- arrays have no key column to align
+      pairs by. The returned `ArrayCheck` has a slightly different
+      `.custom()` signature than `Check` (no `column` to select), so
+      check its docstring separately.
     """
-    return ArrayCheck(after=after, before=before)
+    after_is_array = isinstance(after, np.ndarray)
+    before_is_array = isinstance(before, np.ndarray)
+
+    if after_is_array or before_is_array:
+        if before is None:
+            raise UsageError(
+                "`check()` requires both `after` and `before` to be numpy "
+                "arrays; got `after` as an array with `before` omitted. "
+                "Arrays have no columns, so there's no single-array "
+                "comparison mode (unlike a single dataframe's "
+                "`paired_column=<column name>` mode)."
+            )
+        if not (after_is_array and before_is_array):
+            raise UsageError(
+                "`after` and `before` must both be numpy arrays, or both be "
+                "dataframe-like -- got a mix of the two."
+            )
+        if paired_by is not None:
+            raise UsageError(
+                "`paired_by` is not valid when `after`/`before` are numpy "
+                "arrays; arrays have no key column to align pairs by."
+            )
+        return ArrayCheck(after=after, before=before)
+
+    return Check(after=after, before=before, paired_by=paired_by)

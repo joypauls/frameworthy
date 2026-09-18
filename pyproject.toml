@@ -16,9 +16,9 @@ classifiers = [
 ]
 
 dependencies = [
-    "narwhals>=2.25.0",
-    "numpy>=2.4.6",
-    "scipy>=1.17.1",
+    "narwhals>=2.0",
+    "numpy>=2.2",
+    "scipy>=1.16",
 ]
 
 [build-system]

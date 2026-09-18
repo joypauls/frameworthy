@@ -221,7 +221,7 @@ class TestSameDataframeComparison:
             }
         )
 
-        mean_check = fw.check(df).mean("score_after", before="score_before")
+        mean_check = fw.check(df).mean("score_after", paired_column="score_before")
 
         assert mean_check._paired is True
         assert (mean_check._after_values - mean_check._before_values == 1.0).all()
@@ -230,29 +230,29 @@ class TestSameDataframeComparison:
         df = frame_factory({"score": [1.0, 2.0, 3.0]})
 
         with pytest.raises(fw.UsageError, match="different column"):
-            fw.check(df).mean("score", before="score")
+            fw.check(df).mean("score", paired_column="score")
 
-    def test_requires_before_kwarg_for_single_dataframe(self, frame_factory):
+    def test_requires_paired_column_kwarg_for_single_dataframe(self, frame_factory):
         df = frame_factory({"score_before": [1.0, 2.0], "score_after": [2.0, 3.0]})
 
-        with pytest.raises(fw.UsageError, match="before="):
+        with pytest.raises(fw.UsageError, match="paired_column="):
             fw.check(df).mean("score_after")
 
-    def test_rejects_before_kwarg_for_two_dataframe_mode(self, frame_factory):
+    def test_rejects_paired_column_kwarg_for_two_dataframe_mode(self, frame_factory):
         before = frame_factory({"revenue": [1.0, 2.0]})
         after = frame_factory({"revenue": [2.0, 3.0]})
 
         with pytest.raises(fw.UsageError, match="same-dataframe"):
-            fw.check(after, before=before).mean("revenue", before="revenue")
+            fw.check(after, before=before).mean("revenue", paired_column="revenue")
 
     def test_missing_column_raises_key_error(self, frame_factory):
         df = frame_factory({"score_before": [1.0, 2.0], "score_after": [2.0, 3.0]})
 
         with pytest.raises(fw.ColumnNotFoundError):
-            fw.check(df).mean("missing_col", before="score_before")
+            fw.check(df).mean("missing_col", paired_column="score_before")
 
         with pytest.raises(fw.ColumnNotFoundError):
-            fw.check(df).mean("score_after", before="missing_col")
+            fw.check(df).mean("score_after", paired_column="missing_col")
 
     def test_null_only_column_raises_value_error(self, frame_factory):
         df = frame_factory(
@@ -260,7 +260,7 @@ class TestSameDataframeComparison:
         )
 
         with pytest.raises(fw.InvalidDataError, match="No usable"):
-            fw.check(df).mean("score_after", before="score_before")
+            fw.check(df).mean("score_after", paired_column="score_before")
 
     def test_drops_rows_with_nulls_in_either_column(self, frame_factory):
         df = frame_factory(
@@ -270,7 +270,7 @@ class TestSameDataframeComparison:
             }
         )
 
-        mean_check = fw.check(df).mean("score_after", before="score_before")
+        mean_check = fw.check(df).mean("score_after", paired_column="score_before")
 
         assert mean_check._before_values.tolist() == [10.0, 40.0]
         assert mean_check._after_values.tolist() == [11.0, 41.0]
@@ -279,7 +279,7 @@ class TestSameDataframeComparison:
         df = frame_factory({"score_before": [10.0, None], "score_after": [11.0, None]})
 
         with pytest.raises(fw.InvalidDataError, match="At least 2"):
-            fw.check(df).mean("score_after", before="score_before")
+            fw.check(df).mean("score_after", paired_column="score_before")
 
 
 class TestRateSpecific:
@@ -676,17 +676,18 @@ class TestInferenceOptions:
 
 
 class TestArrayCheck:
-    """`ArrayCheck`/`check_arrays()`: the array-input counterpart to
-    `Check`/`check()`, always unpaired. Only `.custom()` is covered here in
-    detail (mirroring `TestCustomSpecific` above); `.mean()`/`.rate()`/
-    `.median()` just construct the same `MeanCheck`/`RateCheck`/
-    `MedianCheck` classes already covered via `Check`.
+    """`ArrayCheck`, returned by `check()` when given two numpy arrays:
+    the array-input counterpart to `Check`/dataframe input, always
+    unpaired. Only `.custom()` is covered here in detail (mirroring
+    `TestCustomSpecific` above); `.mean()`/`.rate()`/`.median()` just
+    construct the same `MeanCheck`/`RateCheck`/`MedianCheck` classes
+    already covered via `Check`.
     """
 
     def test_mean_matches_check_result(self):
         before, after = EQUIVALENT_ARRAYS["mean", False]
 
-        result = fw.check_arrays(after, before).mean().equivalent(within=MARGIN["mean"])
+        result = fw.check(after, before).mean().equivalent(within=MARGIN["mean"])
 
         assert result.paired is False
         assert result.decision == "passed"
@@ -695,7 +696,7 @@ class TestArrayCheck:
         before, after = EQUIVALENT_ARRAYS["mean", False]
 
         result = (
-            fw.check_arrays(after, before)
+            fw.check(after, before)
             .custom(np.mean, name="array_mean")
             .equivalent(within=MARGIN["mean"], random_state=0)
         )
@@ -709,4 +710,179 @@ class TestArrayCheck:
         before, after = EQUIVALENT_ARRAYS["mean", False]
 
         with pytest.raises(fw.UsageError, match="`name`"):
-            fw.check_arrays(after, before).custom(np.mean, name="")
+            fw.check(after, before).custom(np.mean, name="")
+
+
+class TestCheckArrayDispatch:
+    """`check()`'s dispatch between `Check` (dataframes) and `ArrayCheck`
+    (numpy arrays), and the `UsageError`s raised for invalid mixes of the
+    two.
+    """
+
+    def test_two_arrays_returns_array_check(self):
+        before, after = EQUIVALENT_ARRAYS["mean", False]
+
+        assert isinstance(fw.check(after, before), fw.ArrayCheck)
+
+    def test_mixing_array_and_dataframe_raises(self, frame_factory):
+        before, after = EQUIVALENT_ARRAYS["mean", False]
+        after_df = frame_factory({"revenue": after})
+
+        with pytest.raises(fw.UsageError, match="mix"):
+            fw.check(after_df, before)
+
+    def test_array_after_without_before_raises(self):
+        _, after = EQUIVALENT_ARRAYS["mean", False]
+
+        with pytest.raises(fw.UsageError, match="`before`"):
+            fw.check(after)
+
+    def test_array_with_paired_by_raises(self):
+        before, after = EQUIVALENT_ARRAYS["mean", False]
+
+        with pytest.raises(fw.UsageError, match="paired_by"):
+            fw.check(after, before, paired_by="id")
+
+
+class TestDistributionSpecific:
+    """Behavior unique to `DistributionCheck`: unlike every other built-in
+    check, it only supports independent samples (two separate dataframes,
+    or two arrays), and offers `.equivalent()`/`.change_greater_than()` but
+    not `.change_less_than()`.
+    """
+
+    def test_rejects_single_dataframe_mode(self, frame_factory):
+        df = frame_factory({"revenue": [1.0, 2.0, 3.0]})
+
+        with pytest.raises(fw.UsageError, match="single dataframe"):
+            fw.check(df).distribution("revenue")
+
+    def test_rejects_paired_by(self, frame_factory):
+        before = frame_factory({"id": [1, 2], "revenue": [1.0, 2.0]})
+        after = frame_factory({"id": [1, 2], "revenue": [1.5, 2.5]})
+
+        with pytest.raises(fw.UsageError, match="paired_by"):
+            fw.check(after, before=before, paired_by="id").distribution("revenue")
+
+    def test_rejects_non_positive_within(self, frame_factory):
+        rng = np.random.default_rng(0)
+        before = rng.normal(size=50)
+        after = rng.normal(size=50)
+        before_df = frame_factory({"revenue": before})
+        after_df = frame_factory({"revenue": after})
+
+        check_ = fw.check(after_df, before=before_df).distribution("revenue")
+        with pytest.raises(fw.UsageError, match="`within`"):
+            check_.equivalent(within=0.0)
+
+    def test_identical_distribution_passes(self, frame_factory):
+        rng = np.random.default_rng(0)
+        before = rng.normal(loc=10.0, scale=2.0, size=500)
+        after = rng.normal(loc=10.0, scale=2.0, size=500)
+        before_df = frame_factory({"revenue": before})
+        after_df = frame_factory({"revenue": after})
+
+        result = (
+            fw.check(after_df, before=before_df)
+            .distribution("revenue")
+            .equivalent(within=1.0, random_state=0)
+        )
+
+        assert result.decision == "passed"
+        assert result.passed is True
+        assert result.column == "revenue"
+        assert result.n_before == 500
+        assert result.n_after == 500
+        assert result.method == "subsampling"
+        result.assert_passed()  # should not raise
+
+    def test_clearly_shifted_distribution_fails(self, frame_factory):
+        rng = np.random.default_rng(1)
+        before = rng.normal(loc=0.0, scale=1.0, size=500)
+        after = rng.normal(loc=20.0, scale=1.0, size=500)
+        before_df = frame_factory({"revenue": before})
+        after_df = frame_factory({"revenue": after})
+
+        result = (
+            fw.check(after_df, before=before_df)
+            .distribution("revenue")
+            .equivalent(within=1.0, random_state=0)
+        )
+
+        assert result.decision == "failed"
+        assert result.passed is False
+        with pytest.raises(fw.FrameworthyAssertionError):
+            result.assert_passed()
+
+    def test_array_check_distribution_works(self):
+        rng = np.random.default_rng(2)
+        before = rng.normal(loc=5.0, scale=1.0, size=300)
+        after = rng.normal(loc=5.0, scale=1.0, size=300)
+
+        result = (
+            fw.check(after, before)
+            .distribution()
+            .equivalent(within=1.0, random_state=0)
+        )
+
+        assert result.decision == "passed"
+        assert result.column == "value"
+
+    def test_change_greater_than_rejects_negative_threshold(self, frame_factory):
+        rng = np.random.default_rng(0)
+        before = rng.normal(size=50)
+        after = rng.normal(size=50)
+        before_df = frame_factory({"revenue": before})
+        after_df = frame_factory({"revenue": after})
+
+        check_ = fw.check(after_df, before=before_df).distribution("revenue")
+        with pytest.raises(fw.UsageError, match="`threshold`"):
+            check_.change_greater_than(threshold=-1.0)
+
+    def test_change_greater_than_confirms_drift(self, frame_factory):
+        rng = np.random.default_rng(1)
+        before = rng.normal(loc=0.0, scale=1.0, size=500)
+        after = rng.normal(loc=20.0, scale=1.0, size=500)
+        before_df = frame_factory({"revenue": before})
+        after_df = frame_factory({"revenue": after})
+
+        result = (
+            fw.check(after_df, before=before_df)
+            .distribution("revenue")
+            .change_greater_than(threshold=1.0, random_state=0)
+        )
+
+        assert result.decision == "passed"
+        assert result.passed is True
+        assert result.threshold == 1.0
+        assert result.within is None
+        result.assert_passed()  # should not raise
+
+    def test_change_greater_than_fails_for_identical_distribution(self, frame_factory):
+        rng = np.random.default_rng(0)
+        before = rng.normal(loc=10.0, scale=2.0, size=500)
+        after = rng.normal(loc=10.0, scale=2.0, size=500)
+        before_df = frame_factory({"revenue": before})
+        after_df = frame_factory({"revenue": after})
+
+        result = (
+            fw.check(after_df, before=before_df)
+            .distribution("revenue")
+            .change_greater_than(threshold=5.0, random_state=0)
+        )
+
+        assert result.decision == "failed"
+        assert result.passed is False
+        with pytest.raises(fw.FrameworthyAssertionError):
+            result.assert_passed()
+
+    def test_change_less_than_always_raises(self, frame_factory):
+        rng = np.random.default_rng(0)
+        before = rng.normal(size=50)
+        after = rng.normal(size=50)
+        before_df = frame_factory({"revenue": before})
+        after_df = frame_factory({"revenue": after})
+
+        check_ = fw.check(after_df, before=before_df).distribution("revenue")
+        with pytest.raises(fw.UsageError, match="equivalent"):
+            check_.change_less_than(threshold=5.0)

@@ -2,166 +2,16 @@ import numpy as np
 import pytest
 from scipy import stats as scipy_stats
 
+from frameworthy._bootstrap import bootstrap_diff_ci
 from frameworthy._errors import InvalidDataError, UsageError
 from frameworthy._intervals import (
     analytical_mean_diff_ci,
     analytical_rate_diff_ci,
-    bootstrap_diff_ci,
     diff_ci,
     independent_rate_diff_ci,
     paired_rate_diff_ci,
     wilson_interval,
 )
-
-
-class TestBootstrapDiffCi:
-    def test_paired_recovers_known_constant_shift(self):
-        rng = np.random.default_rng(0)
-        before = np.array([10.0, 20.0, 30.0, 40.0, 50.0])
-        after = before + 1.0  # constant shift, zero variance in diffs
-
-        observed, ci_low, ci_high = bootstrap_diff_ci(
-            before,
-            after,
-            paired=True,
-            alpha=0.05,
-            n_resamples=1000,
-            rng=rng,
-        )
-
-        assert observed == pytest.approx(1.0)
-        assert ci_low == pytest.approx(1.0)
-        assert ci_high == pytest.approx(1.0)
-
-    def test_paired_requires_equal_length(self):
-        rng = np.random.default_rng(0)
-        with pytest.raises(InvalidDataError, match="same length"):
-            bootstrap_diff_ci(
-                np.array([1.0, 2.0]),
-                np.array([1.0, 2.0, 3.0]),
-                paired=True,
-                alpha=0.05,
-                n_resamples=100,
-                rng=rng,
-            )
-
-    def test_paired_requires_at_least_two_observations(self):
-        rng = np.random.default_rng(0)
-        with pytest.raises(InvalidDataError, match="At least 2"):
-            bootstrap_diff_ci(
-                np.array([1.0]),
-                np.array([2.0]),
-                paired=True,
-                alpha=0.05,
-                n_resamples=100,
-                rng=rng,
-            )
-
-    def test_unpaired_recovers_approximate_shift(self):
-        rng = np.random.default_rng(0)
-        before = rng.normal(loc=10.0, scale=0.01, size=500)
-        after = rng.normal(loc=11.0, scale=0.01, size=600)
-
-        observed, ci_low, ci_high = bootstrap_diff_ci(
-            before,
-            after,
-            paired=False,
-            alpha=0.05,
-            n_resamples=2000,
-            rng=rng,
-        )
-
-        assert observed == pytest.approx(1.0, abs=0.05)
-        assert ci_low < observed < ci_high
-
-    def test_unpaired_allows_different_lengths(self):
-        rng = np.random.default_rng(0)
-        before = np.array([1.0, 2.0, 3.0])
-        after = np.array([4.0, 5.0])
-
-        observed, ci_low, ci_high = bootstrap_diff_ci(
-            before,
-            after,
-            paired=False,
-            alpha=0.05,
-            n_resamples=100,
-            rng=rng,
-        )
-
-        assert observed == pytest.approx(4.5 - 2.0)
-        assert ci_low <= ci_high
-
-    def test_unpaired_requires_at_least_two_observations_per_side(self):
-        rng = np.random.default_rng(0)
-        with pytest.raises(InvalidDataError, match="At least 2"):
-            bootstrap_diff_ci(
-                np.array([1.0]),
-                np.array([2.0, 3.0]),
-                paired=False,
-                alpha=0.05,
-                n_resamples=100,
-                rng=rng,
-            )
-
-    def test_is_reproducible_with_seeded_rng(self):
-        before = np.array([1.0, 2.0, 3.0, 4.0])
-        after = np.array([2.0, 2.0, 5.0, 3.0])
-
-        result_a = bootstrap_diff_ci(
-            before,
-            after,
-            paired=True,
-            alpha=0.05,
-            n_resamples=500,
-            rng=np.random.default_rng(42),
-        )
-        result_b = bootstrap_diff_ci(
-            before,
-            after,
-            paired=True,
-            alpha=0.05,
-            n_resamples=500,
-            rng=np.random.default_rng(42),
-        )
-
-        assert result_a == result_b
-
-    def test_paired_with_median_statistic_func_recovers_known_constant_shift(self):
-        rng = np.random.default_rng(0)
-        before = np.array([10.0, 20.0, 30.0, 40.0, 50.0])
-        after = before + 1.0  # constant shift, zero variance in diffs
-
-        observed, ci_low, ci_high = bootstrap_diff_ci(
-            before,
-            after,
-            paired=True,
-            alpha=0.05,
-            n_resamples=1000,
-            rng=rng,
-            statistic_func=np.median,
-        )
-
-        assert observed == pytest.approx(1.0)
-        assert ci_low == pytest.approx(1.0)
-        assert ci_high == pytest.approx(1.0)
-
-    def test_unpaired_with_median_statistic_func_recovers_known_difference(self):
-        rng = np.random.default_rng(0)
-        before = rng.normal(loc=10.0, scale=1.0, size=500)
-        after = rng.normal(loc=13.0, scale=1.0, size=600)
-
-        observed, ci_low, ci_high = bootstrap_diff_ci(
-            before,
-            after,
-            paired=False,
-            alpha=0.05,
-            n_resamples=2000,
-            rng=rng,
-            statistic_func=np.median,
-        )
-
-        assert observed == pytest.approx(3.0, abs=0.3)
-        assert ci_low < observed < ci_high
 
 
 class TestAnalyticalMeanDiffCi:
