@@ -38,6 +38,7 @@ def _make_distribution_result(decision: Decision, **overrides) -> DistributionRe
     defaults = {
         "decision": decision,
         "column": "revenue",
+        "paired": False,
         "distance": 0.8,
         "ci_low": 0.4,
         "ci_high": 1.2,
@@ -57,6 +58,7 @@ def _make_distribution_change_result(
     defaults = {
         "decision": decision,
         "column": "revenue",
+        "paired": False,
         "distance": 8.0,
         "ci_low": 6.0,
         "ci_high": 10.0,
@@ -315,6 +317,15 @@ class TestDistributionResultStr:
         assert "n_before=500" in text
         assert "n_after=500" in text
         assert "method=subsampling" in text
+
+    def test_reports_paired_sample_size(self):
+        result = _make_distribution_result(
+            Decision.PASSED, paired=True, n_before=500, n_after=500
+        )
+        text = _normalize(str(result))
+
+        assert "paired, n=500" in text
+        assert "unpaired" not in text
 
 
 class TestDistributionResultAssertPassed:

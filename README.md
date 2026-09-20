@@ -98,6 +98,8 @@ Examples:
 
 `.distribution().equivalent()` doesn't use the BCa bootstrap that powers `.median()`/`.custom()`. The plug-in Wasserstein distance estimator is biased and, right where it matters most (two samples that are actually equivalent, so the true distance is 0 or close to it), the ordinary bootstrap is known to be unreliable at that boundary. Instead, it uses a subsampling/m-out-of-n bootstrap, which stays valid in that case.
 
+Like `.mean()`/`.rate()`/`.median()`/`.custom()`, `.distribution()` supports both independent and paired samples (`paired_by=` across two dataframes, or `paired_column=` within a single dataframe). Pairing doesn't change the observed Wasserstein distance itself (it's a function of the two marginal distributions), but it does narrow the confidence interval when `before`/`after` are correlated, since the subsampling bootstrap then resamples matched pairs together instead of independently.
+
 
 ## Development
 

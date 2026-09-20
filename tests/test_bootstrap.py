@@ -301,8 +301,8 @@ class TestSubsampleBootstrapCi:
         assert result_a == result_b
 
     def test_resamples_before_and_after_independently(self):
-        """There's no paired mode: resampling `before`/`after` at different
-        sizes must work, which is only possible if they're drawn
+        """By default (`paired=False`), resampling `before`/`after` at
+        different sizes must work, which is only possible if they're drawn
         independently rather than sharing indices.
         """
         rng = np.random.default_rng(0)
@@ -362,3 +362,74 @@ class TestSubsampleBootstrapCi:
             subsample_bootstrap_ci(
                 before, after, self._mean_diff, alpha=0.05, n_resamples=0, rng=rng
             )
+
+    def test_paired_rejects_mismatched_lengths(self):
+        rng = np.random.default_rng(0)
+        before = rng.normal(size=20)
+        after = rng.normal(size=25)
+
+        with pytest.raises(InvalidDataError, match="same length"):
+            subsample_bootstrap_ci(
+                before,
+                after,
+                self._mean_diff,
+                paired=True,
+                alpha=0.05,
+                n_resamples=100,
+                rng=rng,
+            )
+
+    def test_paired_is_reproducible_with_seeded_rng(self):
+        before = np.linspace(0.0, 10.0, 50)
+        after = before + 1.0
+
+        result_a = subsample_bootstrap_ci(
+            before,
+            after,
+            self._mean_diff,
+            paired=True,
+            alpha=0.05,
+            n_resamples=300,
+            rng=np.random.default_rng(42),
+        )
+        result_b = subsample_bootstrap_ci(
+            before,
+            after,
+            self._mean_diff,
+            paired=True,
+            alpha=0.05,
+            n_resamples=300,
+            rng=np.random.default_rng(42),
+        )
+
+        assert result_a == result_b
+
+    def test_paired_gives_narrower_ci_for_strongly_correlated_pairs(self):
+        # a constant-plus-tiny-noise paired shift is highly correlated;
+        # resampling shared indices (paired=True) should preserve that
+        # correlation and produce a tighter CI than resampling before/after
+        # independently, which discards it.
+        rng = np.random.default_rng(1)
+        before = rng.normal(loc=0.0, scale=5.0, size=200)
+        after = before + 3.0 + rng.normal(loc=0.0, scale=0.05, size=200)
+
+        _, paired_low, paired_high = subsample_bootstrap_ci(
+            before,
+            after,
+            self._mean_diff,
+            paired=True,
+            alpha=0.05,
+            n_resamples=500,
+            rng=np.random.default_rng(0),
+        )
+        _, unpaired_low, unpaired_high = subsample_bootstrap_ci(
+            before,
+            after,
+            self._mean_diff,
+            paired=False,
+            alpha=0.05,
+            n_resamples=500,
+            rng=np.random.default_rng(0),
+        )
+
+        assert (paired_high - paired_low) < (unpaired_high - unpaired_low)

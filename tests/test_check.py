@@ -746,23 +746,56 @@ class TestCheckArrayDispatch:
 
 class TestDistributionSpecific:
     """Behavior unique to `DistributionCheck`: unlike every other built-in
-    check, it only supports independent samples (two separate dataframes,
-    or two arrays), and offers `.equivalent()`/`.change_greater_than()` but
-    not `.change_less_than()`.
+    check, it offers `.equivalent()`/`.change_greater_than()` but not
+    `.change_less_than()`. It does support the same pairing modes as
+    `.mean()`/`.rate()`/`.median()`/`.custom()` (`paired_by` across two
+    dataframes, or `paired_column` within a single dataframe).
     """
 
-    def test_rejects_single_dataframe_mode(self, frame_factory):
+    def test_requires_paired_column_kwarg_for_single_dataframe(self, frame_factory):
         df = frame_factory({"revenue": [1.0, 2.0, 3.0]})
 
-        with pytest.raises(fw.UsageError, match="single dataframe"):
+        with pytest.raises(fw.UsageError, match="paired_column="):
             fw.check(df).distribution("revenue")
 
-    def test_rejects_paired_by(self, frame_factory):
+    def test_paired_by_aligns_before_and_after(self, frame_factory):
         before = frame_factory({"id": [1, 2], "revenue": [1.0, 2.0]})
         after = frame_factory({"id": [1, 2], "revenue": [1.5, 2.5]})
 
-        with pytest.raises(fw.UsageError, match="paired_by"):
-            fw.check(after, before=before, paired_by="id").distribution("revenue")
+        distribution_check = fw.check(
+            after, before=before, paired_by="id"
+        ).distribution("revenue")
+
+        assert distribution_check._paired is True
+
+    def test_paired_column_compares_two_columns_in_one_dataframe(self, frame_factory):
+        df = frame_factory(
+            {"revenue_before": [1.0, 2.0, 3.0], "revenue_after": [1.5, 2.5, 3.5]}
+        )
+
+        distribution_check = fw.check(df).distribution(
+            "revenue_after", paired_column="revenue_before"
+        )
+
+        assert distribution_check._paired is True
+
+    def test_paired_equivalent_reports_paired_sample_size(self, frame_factory):
+        rng = np.random.default_rng(0)
+        before = rng.normal(loc=10.0, scale=2.0, size=200)
+        after = before + rng.normal(loc=0.0, scale=0.1, size=200)
+        ids = list(range(len(before)))
+        before_df = frame_factory({"id": ids, "revenue": before})
+        after_df = frame_factory({"id": ids, "revenue": after})
+
+        result = (
+            fw.check(after_df, before=before_df, paired_by="id")
+            .distribution("revenue")
+            .equivalent(within=1.0, random_state=0)
+        )
+
+        assert result.paired is True
+        assert result.n_before == 200
+        assert result.n_after == 200
 
     def test_rejects_non_positive_within(self, frame_factory):
         rng = np.random.default_rng(0)

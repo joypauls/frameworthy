@@ -4,6 +4,7 @@ DistributionCheck.change_greater_than()
 """
 
 import numpy as np
+import pandas as pd
 import pytest
 
 import frameworthy as fw
@@ -107,3 +108,54 @@ class TestChangeGreaterThan:
 
         assert decisions != {"passed"}
         assert decisions != {"failed"}
+
+
+class TestPairedDistributions:
+    """Sanity checks for the `paired=True` path, built via `paired_by` so
+    `before`/`after` are correlated pairs rather than independent samples.
+    """
+
+    def _paired_distribution_check(self, before: np.ndarray, after: np.ndarray):
+        ids = list(range(len(before)))
+        before_df = pd.DataFrame({"id": ids, "value": before})
+        after_df = pd.DataFrame({"id": ids, "value": after})
+        return fw.check(after_df, before=before_df, paired_by="id").distribution(
+            "value"
+        )
+
+    def test_does_not_falsely_fail_for_matched_pairs(self):
+        for seed in range(5):
+            rng = np.random.default_rng(seed)
+            before = rng.normal(loc=50.0, scale=5.0, size=400)
+            after = before + rng.normal(loc=0.0, scale=0.2, size=400)
+
+            result = self._paired_distribution_check(before, after).equivalent(
+                within=2.0, n_resamples=500, random_state=seed
+            )
+
+            assert result.paired is True
+            assert result.decision != "failed"
+
+    def test_fails_for_a_clear_paired_shift(self):
+        rng = np.random.default_rng(0)
+        before = rng.normal(loc=0.0, scale=1.0, size=400)
+        after = before + 15.0 + rng.normal(loc=0.0, scale=0.1, size=400)
+
+        result = self._paired_distribution_check(before, after).equivalent(
+            within=1.0, n_resamples=500, random_state=0
+        )
+
+        assert result.decision == "failed"
+        assert result.distance == pytest.approx(15.0, abs=1.0)
+
+    def test_change_greater_than_confirms_drift_for_matched_pairs(self):
+        rng = np.random.default_rng(0)
+        before = rng.normal(loc=0.0, scale=1.0, size=400)
+        after = before + 15.0 + rng.normal(loc=0.0, scale=0.1, size=400)
+
+        result = self._paired_distribution_check(before, after).change_greater_than(
+            threshold=1.0, n_resamples=500, random_state=0
+        )
+
+        assert result.decision == "passed"
+        assert result.paired is True
