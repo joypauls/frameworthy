@@ -525,6 +525,7 @@ class CustomCheck(MetricCheck):
 def _distribution_result(
     *,
     column: str,
+    paired: bool,
     before_values: np.ndarray,
     after_values: np.ndarray,
     alpha: float,
@@ -545,6 +546,7 @@ def _distribution_result(
     distance, ci_low, ci_high = wasserstein_distance_ci(
         before_values,
         after_values,
+        paired=paired,
         alpha=alpha,
         n_resamples=n_resamples,
         rng=rng,
@@ -555,6 +557,7 @@ def _distribution_result(
     return DistributionResult(
         decision=decision,
         column=column,
+        paired=paired,
         distance=distance,
         ci_low=ci_low,
         ci_high=ci_high,
@@ -569,29 +572,36 @@ def _distribution_result(
 
 class DistributionCheck:
     """A check bound to comparing the distribution of one numeric column
-    between two independent samples, using the Wasserstein-1 (earth
-    mover's) distance.
+    between `before` and `after`, using the Wasserstein-1 (earth mover's)
+    distance.
 
     Returned by `Check.distribution(...)`/`ArrayCheck.distribution(...)`;
     not meant to be constructed directly.
 
     Unlike `MeanCheck`/`RateCheck`/`MedianCheck`/`CustomCheck`, this isn't
-    a `MetricCheck` subclass: it only supports independent (unpaired)
-    samples (there's no paired mode, no `method=` switch). It offers
-    `.equivalent()` and `.change_greater_than()`, but not
-    `.change_less_than()` -- see that method's docstring for why. See
-    `frameworthy._distribution` for why its uncertainty estimate uses a
-    subsampling/m-out-of-n bootstrap rather than the ordinary percentile
-    bootstrap used elsewhere in this library.
+    a `MetricCheck` subclass: there's no `method=` switch (only the
+    subsampling bootstrap described below). It does support both paired
+    and unpaired samples, the same way `MetricCheck` does -- `paired`
+    changes how the confidence interval's uncertainty is resampled (see
+    `frameworthy._bootstrap.subsample_bootstrap_ci`), not the observed
+    Wasserstein distance itself, which is a function of the two marginal
+    distributions only. It offers `.equivalent()` and
+    `.change_greater_than()`, but not `.change_less_than()` -- see that
+    method's docstring for why. See `frameworthy._distribution` for why
+    its uncertainty estimate uses a subsampling/m-out-of-n bootstrap
+    rather than the ordinary percentile bootstrap used elsewhere in this
+    library.
     """
 
     def __init__(
         self,
         column: str,
+        paired: bool,
         before_values: np.ndarray,
         after_values: np.ndarray,
     ) -> None:
         self._column = column
+        self._paired = paired
         self._before_values = np.asarray(before_values, dtype=float)
         self._after_values = np.asarray(after_values, dtype=float)
 
@@ -619,6 +629,7 @@ class DistributionCheck:
 
         return _distribution_result(
             column=self._column,
+            paired=self._paired,
             before_values=self._before_values,
             after_values=self._after_values,
             alpha=alpha,
@@ -655,6 +666,7 @@ class DistributionCheck:
 
         return _distribution_result(
             column=self._column,
+            paired=self._paired,
             before_values=self._before_values,
             after_values=self._after_values,
             alpha=alpha,
@@ -848,36 +860,30 @@ class Check:
             statistic_func=statistic_func,
         )
 
-    def distribution(self, column: str) -> DistributionCheck:
+    def distribution(
+        self, column: str, paired_column: str | None = None
+    ) -> DistributionCheck:
         """Select a numeric column and compare its distribution between
         `before` and `after`, via `DistributionCheck.equivalent()`.
 
-        Unlike `.mean()`/`.rate()`/`.median()`/`.custom()`, this only
-        supports independent samples: `check()` must have been given two
-        separate dataframes, and without `paired_by` (both of those
-        pairing modes are for correlated/matched observations, which this
-        first slice doesn't support).
+        Supports the same pairing modes as `.mean()`/`.rate()`/`.median()`/
+        `.custom()`: if `check()` was given a single dataframe, pass
+        `paired_column=<column name>` here to compare two columns within
+        that same dataframe as paired observations (row-by-row); if
+        `check()` was given two separate dataframes with `paired_by`, they
+        are aligned on that key first. Either way, pairing only affects
+        how the confidence interval's uncertainty is resampled -- the
+        observed Wasserstein distance itself is the same regardless of
+        pairing.
         """
-        if self._before is None:
-            raise UsageError(
-                "`.distribution()` requires two separate dataframes; "
-                "`check()` was given a single dataframe. Distribution "
-                "checks only support independent samples, so there's no "
-                "single-dataframe `paired_column=<column name>` mode like "
-                "`.mean()`/`.rate()`/`.median()` has."
-            )
-        if self._paired_by is not None:
-            raise UsageError(
-                "`.distribution()` only supports independent samples; it "
-                "can't be used with `paired_by`."
-            )
-
         before_values, after_values, paired = self._extract_before_after(
-            column, None, "distribution"
+            column, paired_column, "distribution"
         )
-        assert not paired  # guaranteed by the `paired_by` check above
         return DistributionCheck(
-            column=column, before_values=before_values, after_values=after_values
+            column=column,
+            paired=paired,
+            before_values=before_values,
+            after_values=after_values,
         )
 
 
@@ -964,6 +970,7 @@ class ArrayCheck:
         """
         return DistributionCheck(
             column=column,
+            paired=self._paired,
             before_values=self._before_values,
             after_values=self._after_values,
         )

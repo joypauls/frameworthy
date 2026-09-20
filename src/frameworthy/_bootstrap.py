@@ -146,6 +146,7 @@ def subsample_bootstrap_ci(
     after: np.ndarray,
     statistic_func: TwoSampleStatisticFunc,
     *,
+    paired: bool = False,
     alpha: float,
     n_resamples: int,
     rng: np.random.Generator,
@@ -167,8 +168,17 @@ def subsample_bootstrap_ci(
     grows with `n` but at a slower rate (`m / n -> 0`, guaranteed here by
     `subsample_exponent < 1`).
 
-    `before` and `after` are always resampled independently (there's no
-    paired mode for this style of bootstrap in this library yet).
+    If `paired`, `before` and `after` must be the same length and
+    correspond element-wise: each resample draws one shared index array
+    and applies it to both sides (`before[idx]`, `after[idx]`), preserving
+    before/after correlation the same way `bootstrap_diff_ci`'s
+    `paired=True` does. The resampling unit is then a pair rather than an
+    independent before/after observation, so the scaling that turns
+    subsample deviations into a CI also switches from the two-independent
+    -sample harmonic-mean formula (`n_eff`/`m_eff` combining `n_before`/
+    `n_after`) to the single-sample analog (`n_eff = n`, `m_eff = m`,
+    where `n` is the shared pair count). Otherwise `before` and `after`
+    are resampled independently, valid for unpaired/independent samples.
 
     Returns `(statistic, ci_low, ci_high)` where `statistic` is the
     observed `statistic_func(before, after)` and the interval is a
@@ -184,24 +194,37 @@ def subsample_bootstrap_ci(
     n_before, n_after = len(before), len(after)
     statistic = float(statistic_func(before, after))
 
-    m_before = _subsample_size(
-        n_before, exponent=subsample_exponent, min_size=min_subsample_size
-    )
-    m_after = _subsample_size(
-        n_after, exponent=subsample_exponent, min_size=min_subsample_size
-    )
-    n_eff = (n_before * n_after) / (n_before + n_after)
-    m_eff = (m_before * m_after) / (m_before + m_after)
+    if paired:
+        validate_equal_length(before, after, context="subsampling bootstrap")
+        m = _subsample_size(
+            n_before, exponent=subsample_exponent, min_size=min_subsample_size
+        )
+        n_eff = n_before
+        m_eff = m
+        idx = rng.integers(0, n_before, size=(n_resamples, m))
 
-    before_idx = rng.integers(0, n_before, size=(n_resamples, m_before))
-    after_idx = rng.integers(0, n_after, size=(n_resamples, m_after))
+        subsample_statistics = np.array(
+            [statistic_func(before[idx[i]], after[idx[i]]) for i in range(n_resamples)]
+        )
+    else:
+        m_before = _subsample_size(
+            n_before, exponent=subsample_exponent, min_size=min_subsample_size
+        )
+        m_after = _subsample_size(
+            n_after, exponent=subsample_exponent, min_size=min_subsample_size
+        )
+        n_eff = (n_before * n_after) / (n_before + n_after)
+        m_eff = (m_before * m_after) / (m_before + m_after)
 
-    subsample_statistics = np.array(
-        [
-            statistic_func(before[before_idx[i]], after[after_idx[i]])
-            for i in range(n_resamples)
-        ]
-    )
+        before_idx = rng.integers(0, n_before, size=(n_resamples, m_before))
+        after_idx = rng.integers(0, n_after, size=(n_resamples, m_after))
+
+        subsample_statistics = np.array(
+            [
+                statistic_func(before[before_idx[i]], after[after_idx[i]])
+                for i in range(n_resamples)
+            ]
+        )
 
     deviations = np.sqrt(m_eff) * (subsample_statistics - statistic)
     q_low, q_high = np.percentile(deviations, [100 * alpha, 100 * (1 - alpha)])

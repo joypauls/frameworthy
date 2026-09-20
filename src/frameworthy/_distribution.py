@@ -1,5 +1,5 @@
 """Uncertainty estimation for the Wasserstein-1 (earth mover's) distance
-between two independent samples.
+between two samples, independent or paired.
 
 Split out from `_intervals.py`: that module owns confidence intervals for a
 *difference* statistic (`after - before`); this module owns a confidence
@@ -31,7 +31,12 @@ from scipy import stats
 
 from ._bootstrap import subsample_bootstrap_ci
 from ._constants import Interval
-from ._validation import validate_alpha, validate_min_observations, validate_n_resamples
+from ._validation import (
+    validate_alpha,
+    validate_equal_length,
+    validate_min_observations,
+    validate_n_resamples,
+)
 
 _MIN_OBSERVATIONS = 8
 
@@ -40,6 +45,7 @@ def wasserstein_distance_ci(
     before: np.ndarray,
     after: np.ndarray,
     *,
+    paired: bool,
     alpha: float,
     n_resamples: int,
     rng: np.random.Generator,
@@ -48,10 +54,15 @@ def wasserstein_distance_ci(
     Estimate the Wasserstein-1 distance between `before` and `after` and an
     m-out-of-n bootstrap confidence interval for it.
 
-    `before` and `after` are treated as independent samples (there is no
-    paired mode for a distribution check. See this module's docstring
-    for why a resampling strategy other than the ordinary bootstrap is
-    used).
+    `before` and `after` may be treated as independent samples or, if
+    `paired`, as correlated pairs (e.g. the same units measured before and
+    after) -- see this module's docstring for why a resampling strategy
+    other than the ordinary bootstrap is used, and `subsample_bootstrap_ci`
+    for how `paired` changes the resampling itself. The Wasserstein
+    distance point estimate doesn't depend on pairing (it's a function of
+    the two marginal empirical distributions only), but its sampling
+    variability does, so pairing only affects the width of the returned
+    interval, not `distance` itself.
 
     Returns `(distance, ci_low, ci_high)` where `distance` is the observed
     `scipy.stats.wasserstein_distance(before, after)` and the interval is
@@ -61,21 +72,30 @@ def wasserstein_distance_ci(
     """
     validate_alpha(alpha)
     validate_n_resamples(n_resamples)
-    validate_min_observations(
-        len(before),
-        _MIN_OBSERVATIONS,
-        context="before observations for a distribution check",
-    )
-    validate_min_observations(
-        len(after),
-        _MIN_OBSERVATIONS,
-        context="after observations for a distribution check",
-    )
+    if paired:
+        validate_equal_length(before, after, context="a paired distribution check")
+        validate_min_observations(
+            len(before),
+            _MIN_OBSERVATIONS,
+            context="paired observations for a distribution check",
+        )
+    else:
+        validate_min_observations(
+            len(before),
+            _MIN_OBSERVATIONS,
+            context="before observations for a distribution check",
+        )
+        validate_min_observations(
+            len(after),
+            _MIN_OBSERVATIONS,
+            context="after observations for a distribution check",
+        )
 
     distance, ci_low, ci_high = subsample_bootstrap_ci(
         before,
         after,
         stats.wasserstein_distance,
+        paired=paired,
         alpha=alpha,
         n_resamples=n_resamples,
         rng=rng,

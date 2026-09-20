@@ -158,6 +158,7 @@ class DistributionResult:
 
     decision: Decision
     column: str
+    paired: bool
     distance: float
     ci_low: float
     ci_high: float
@@ -204,10 +205,12 @@ class DistributionResult:
         width = max(len(label) for label, _ in rows)
         body = "\n".join(f"  {label.ljust(width)} = {value}" for label, value in rows)
 
-        footer = (
-            f"  alpha = {self.alpha:g}, unpaired, n_before={self.n_before}, "
-            f"n_after={self.n_after}, method={self.method}"
+        pairing = (
+            f"paired, n={self.n_before}"
+            if self.paired
+            else f"unpaired, n_before={self.n_before}, n_after={self.n_after}"
         )
+        footer = f"  alpha = {self.alpha:g}, {pairing}, method={self.method}"
         return f"{header}\n{body}\n{footer}"
 
     def assert_passed(self) -> None:
