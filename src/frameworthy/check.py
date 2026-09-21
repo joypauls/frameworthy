@@ -10,6 +10,7 @@ from ._arrays import (
     values_from_two_arrays,
     values_from_two_frames,
 )
+from ._ciconfig import CIConfig
 from ._classify import classify_change_bound, classify_equivalence
 from ._constants import (
     DEFAULT_ALPHA,
@@ -30,7 +31,6 @@ from ._intervals import (
     diff_ci,
 )
 from ._validation import (
-    InferenceConfig,
     validate_custom_metric,
     validate_statistic_func,
 )
@@ -47,7 +47,7 @@ def _equivalence_result(
     before_values: np.ndarray,
     after_values: np.ndarray,
     within: float,
-    inference: InferenceConfig,
+    ci_config: CIConfig,
 ) -> EquivalenceResult:
     """Shared implementation behind every metric's `.equivalent()`: run
     `diff_ci` (dispatching on `analytical_func`/`statistic_func`), classify
@@ -62,10 +62,10 @@ def _equivalence_result(
         before_values,
         after_values,
         paired=paired,
-        alpha=inference.alpha,
-        n_resamples=inference.n_resamples,
-        rng=inference.rng,
-        method=inference.method,
+        alpha=ci_config.alpha,
+        n_resamples=ci_config.n_resamples,
+        rng=ci_config.rng,
+        method=ci_config.method,
         analytical_func=analytical_func,
         statistic_func=statistic_func,
     )
@@ -81,11 +81,11 @@ def _equivalence_result(
         diff=diff,
         ci_low=ci_low,
         ci_high=ci_high,
-        alpha=inference.alpha,
+        alpha=ci_config.alpha,
         within=within,
         n_before=len(before_values),
         n_after=len(after_values),
-        n_resamples=inference.reported_n_resamples,
+        n_resamples=ci_config.reported_n_resamples,
     )
 
 
@@ -100,7 +100,7 @@ def _change_result(
     after_values: np.ndarray,
     threshold: float,
     direction: Direction,
-    inference: InferenceConfig,
+    ci_config: CIConfig,
 ) -> ChangeResult:
     """Shared implementation behind every metric's `.change_greater_than()`/
     `.change_less_than()`: run `diff_ci` (dispatching on `analytical_func`/
@@ -116,10 +116,10 @@ def _change_result(
         before_values,
         after_values,
         paired=paired,
-        alpha=inference.alpha,
-        n_resamples=inference.n_resamples,
-        rng=inference.rng,
-        method=inference.method,
+        alpha=ci_config.alpha,
+        n_resamples=ci_config.n_resamples,
+        rng=ci_config.rng,
+        method=ci_config.method,
         analytical_func=analytical_func,
         statistic_func=statistic_func,
     )
@@ -137,10 +137,10 @@ def _change_result(
         ci_high=ci_high,
         threshold=threshold,
         direction=direction,
-        alpha=inference.alpha,
+        alpha=ci_config.alpha,
         n_before=len(before_values),
         n_after=len(after_values),
-        n_resamples=inference.reported_n_resamples,
+        n_resamples=ci_config.reported_n_resamples,
     )
 
 
@@ -224,7 +224,7 @@ class MetricCheck:
         `method="bootstrap"` changes. `method` defaults to
         `self._default_method` when omitted.
         """
-        inference = InferenceConfig(
+        ci_config = CIConfig(
             alpha=alpha,
             n_resamples=n_resamples,
             random_state=random_state,
@@ -239,7 +239,7 @@ class MetricCheck:
             before_values=self._before_values,
             after_values=self._after_values,
             within=within,
-            inference=inference,
+            ci_config=ci_config,
         )
 
     def change_greater_than(
@@ -266,7 +266,7 @@ class MetricCheck:
         docstring for metric-specific details. `method` defaults to
         `self._default_method` when omitted.
         """
-        inference = InferenceConfig(
+        ci_config = CIConfig(
             alpha=alpha,
             n_resamples=n_resamples,
             random_state=random_state,
@@ -282,7 +282,7 @@ class MetricCheck:
             after_values=self._after_values,
             threshold=threshold,
             direction="greater_than",
-            inference=inference,
+            ci_config=ci_config,
         )
 
     def change_less_than(
@@ -309,7 +309,7 @@ class MetricCheck:
         docstring for metric-specific details. `method` defaults to
         `self._default_method` when omitted.
         """
-        inference = InferenceConfig(
+        ci_config = CIConfig(
             alpha=alpha,
             n_resamples=n_resamples,
             random_state=random_state,
@@ -325,7 +325,7 @@ class MetricCheck:
             after_values=self._after_values,
             threshold=threshold,
             direction="less_than",
-            inference=inference,
+            ci_config=ci_config,
         )
 
 
@@ -542,14 +542,22 @@ def _distribution_result(
     through to the result (see `DistributionResult` for what each means);
     `direction`/the bound they're classified against always agree.
     """
-    rng = np.random.default_rng(random_state)
+    # Always `method="bootstrap"`: `DistributionCheck` has no analytical path
+    # and no `method=` switch of its own (see its docstring), so this is set
+    # explicitly rather than relying on `CIConfig`'s default.
+    ci_config = CIConfig(
+        alpha=alpha,
+        n_resamples=n_resamples,
+        random_state=random_state,
+        method="bootstrap",
+    )
     distance, ci_low, ci_high = wasserstein_distance_ci(
         before_values,
         after_values,
         paired=paired,
-        alpha=alpha,
-        n_resamples=n_resamples,
-        rng=rng,
+        alpha=ci_config.alpha,
+        n_resamples=ci_config.n_resamples,
+        rng=ci_config.rng,
     )
     bound = within if within is not None else threshold
     decision = classify_change_bound(ci_low, ci_high, bound, direction=direction)
@@ -561,10 +569,10 @@ def _distribution_result(
         distance=distance,
         ci_low=ci_low,
         ci_high=ci_high,
-        alpha=alpha,
+        alpha=ci_config.alpha,
         n_before=len(before_values),
         n_after=len(after_values),
-        n_resamples=n_resamples,
+        n_resamples=ci_config.reported_n_resamples,
         within=within,
         threshold=threshold,
     )

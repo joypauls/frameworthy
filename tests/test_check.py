@@ -590,7 +590,7 @@ class TestChangeLessThan:
 
 class TestInferenceOptions:
     """`alpha`/`n_resamples`/`random_state`/`method` behavior, which is
-    shared plumbing (`InferenceConfig`) rather than metric-specific, so one
+    shared plumbing (`CIConfig`) rather than metric-specific, so one
     parametrized pass over `mean`/`rate` is enough -- no need to repeat
     these for every claim method too.
     """
@@ -654,7 +654,7 @@ class TestInferenceOptions:
         ids=["equivalent", "change_greater_than", "change_less_than"],
     )
     def test_rejects_unknown_method(self, frame_factory, claim):
-        # method validation happens in `InferenceConfig`, which doesn't
+        # method validation happens in `CIConfig`, which doesn't
         # care which metric is asking, so one representative metric (mean)
         # is enough here -- unlike the tests above, parametrizing this over
         # `metric` too would double the case count for zero extra coverage.
@@ -665,7 +665,7 @@ class TestInferenceOptions:
             claim(check_)
 
     def test_rejects_invalid_alpha_before_computing_ci(self, frame_factory):
-        # alpha is validated eagerly by `InferenceConfig` as soon as
+        # alpha is validated eagerly by `CIConfig` as soon as
         # `.equivalent()` is called, rather than only failing deep inside CI
         # computation.
         before, after = EQUIVALENT_ARRAYS["mean", True]

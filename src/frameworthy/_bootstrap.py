@@ -113,8 +113,7 @@ def bootstrap_diff_ci(
         return statistic_func(a, axis=axis) - statistic_func(b, axis=axis)
 
     with warnings.catch_warnings():
-        # degenerate bootstrap distributions are handled explicitly below,
-        # so scipy's warning about them would just be noise to the caller
+        # degenerate bootstrap distributions are handled explicitly below
         warnings.filterwarnings("ignore", category=stats.DegenerateDataWarning)
         warnings.filterwarnings("ignore", category=RuntimeWarning)
         result = stats.bootstrap(
