@@ -1,14 +1,15 @@
-> ⚠️ WIP: All 0.1.x releases are unstable. 0.2.0 will be the first stable, production-ready release.
+> ⚠️ WIP: All 0.1.x releases are experimental. 0.2.0 will be the first stable, production-ready release.
 
-> Releases >0.1.3 are functional and ready for testing, but the API is still subject to change.
+> Releases >0.1.5 are ready for testing, but the API is still subject to change.
 
 # frameworthy
 
 ![PyPI Version](https://img.shields.io/pypi/v/frameworthy) 
 [![PyPI pyversions](https://img.shields.io/pypi/pyversions/frameworthy.svg?x=1)](https://pypi.org/project/frameworthy/)
+[![Tests](https://github.com/joypauls/frameworthy/actions/workflows/tests.yml/badge.svg)](https://github.com/joypauls/frameworthy/actions/workflows/tests.yml)
 [![codecov](https://codecov.io/gh/joypauls/frameworthy/branch/main/graph/badge.svg?token=npu0JtY8hc)](https://codecov.io/gh/joypauls/frameworthy)
 
-Lightweight statistical validation library for data changes. Built for engineers and scientists who need to validate data changes with statistical rigor. Works in data validation pipelines, in tests with assertions, or in exploratory settings with easily inspectable results.
+Frameworthy is a lightweight, dataframe-first library for statistically validating changes in data and metrics. Built for engineers and scientists who need reliable checks with statistical rigor, but are not looking to adopt a heavy platform. Works in data validation pipelines, in tests with assertions, or in exploratory settings with easily inspectable results.
 
 <div align="center"><img src="docs/public/banner.png" width="600"></div>
 
@@ -39,7 +40,7 @@ after_df = pl.read_csv("after.csv")
 
 # run a check
 result = (
-    fw.check(after_df, before=before_df)
+    fw.check(after_df, before_df)
     .mean("column_name")
     .equivalent(within=0.1)
 )
@@ -50,10 +51,20 @@ print(result)
 result.assert_passed()
 ```
 
+No data of your own yet? `check()` also accepts two numpy arrays directly, and `frameworthy` ships a couple of sample-data generators so you can try it with no extra steps:
+
+```python
+import frameworthy as fw
+
+data = fw.sample_normal(shift=0.0)
+result = fw.check(data.after, data.before).mean().equivalent(within=0.2)
+print(result)
+```
+
 
 ### Usage
 
-Bring your data: two pandas/polars DataFrames (before and after / pre and post).
+Bring your data: two Pandas/Polars dataframes (before and after / pre and post). Also supports passing in numpy arrays directly.
 
 A standard `frameworthy` check looks like this:
 
@@ -83,6 +94,12 @@ Examples:
     - `alpha=0.1` → 90% CI 
     - `alpha=0.05` → 95% CI
 
+### Distribution Checks
+
+`.distribution().equivalent()` doesn't use the BCa bootstrap that powers `.median()`/`.custom()`. The plug-in Wasserstein distance estimator is biased and, right where it matters most (two samples that are actually equivalent, so the true distance is 0 or close to it), the ordinary bootstrap is known to be unreliable at that boundary. Instead, it uses a subsampling/m-out-of-n bootstrap, which stays valid in that case.
+
+Like `.mean()`/`.rate()`/`.median()`/`.custom()`, `.distribution()` supports both independent and paired samples (`paired_by=` across two dataframes, or `paired_column=` within a single dataframe). Pairing doesn't change the observed Wasserstein distance itself (it's a function of the two marginal distributions), but it does narrow the confidence interval when `before`/`after` are correlated, since the subsampling bootstrap then resamples matched pairs together instead of independently.
+
 
 ## Development
 
@@ -95,6 +112,11 @@ To run the examples:
 ```bash
 uv run scripts/examples.py
 ```
+
+
+## Feedback/Questions
+
+Questions or feedback are welcome! Please open an [issue](https://github.com/joypauls/frameworthy/issues).
 
 
 ## License

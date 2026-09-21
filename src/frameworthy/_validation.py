@@ -8,16 +8,10 @@ own guard.
 """
 
 from collections.abc import Callable
-from dataclasses import dataclass
 
 import numpy as np
 
-from ._constants import (
-    DEFAULT_ALPHA,
-    DEFAULT_INFERENCE_METHOD,
-    DEFAULT_N_RESAMPLES,
-    InferenceMethod,
-)
+from ._constants import InferenceMethod
 from ._errors import InvalidDataError, UsageError
 
 
@@ -108,38 +102,3 @@ def validate_statistic_func(statistic_func: Callable, sample: np.ndarray) -> Non
             "`functools.partial(np.percentile, q=95)`) rather than a plain "
             f"lambda. Calling `statistic_func(array, axis=1)` raised {exc!r}."
         ) from exc
-
-
-@dataclass(frozen=True)
-class InferenceConfig:
-    """Validated bundle of the inference parameters shared by every
-    built-in check: `alpha`, `n_resamples`, `random_state`, and `method`.
-
-    Validating in `__post_init__` means an invalid `alpha` or unknown
-    `method` fails as soon as `.equivalent()` / `.change_greater_than()` /
-    `.change_less_than()` is called, rather than after `before`/`after`
-    data has already been extracted and validated, partway through CI
-    computation.
-    """
-
-    alpha: float = DEFAULT_ALPHA
-    n_resamples: int = DEFAULT_N_RESAMPLES
-    random_state: int | np.random.Generator | None = None
-    method: InferenceMethod = DEFAULT_INFERENCE_METHOD
-
-    def __post_init__(self) -> None:
-        validate_alpha(self.alpha)
-        validate_n_resamples(self.n_resamples)
-        validate_method(self.method)
-
-    @property
-    def rng(self) -> np.random.Generator:
-        return np.random.default_rng(self.random_state)
-
-    @property
-    def reported_n_resamples(self) -> int:
-        """`n_resamples` if it was actually used (bootstrap), else `0` --
-        the rule both `EquivalenceResult` and `ChangeResult` apply to their
-        own `n_resamples` field.
-        """
-        return self.n_resamples if self.method == "bootstrap" else 0

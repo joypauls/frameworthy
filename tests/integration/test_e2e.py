@@ -86,7 +86,7 @@ def test_dataframe_check_equivalent_for_changed_with_buffer(
 
 #     result = (
 #         fw.check(df)
-#         .rate("large_petal_after", before="large_petal_before")
+#         .rate("large_petal_after", paired_column="large_petal_before")
 #         .equivalent(within=0.05, alpha=0.05, random_state=0)
 #     )
 

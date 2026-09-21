@@ -5,7 +5,6 @@ import pytest
 
 from frameworthy._errors import InvalidDataError, UsageError
 from frameworthy._validation import (
-    InferenceConfig,
     validate_alpha,
     validate_custom_metric,
     validate_equal_length,
@@ -66,29 +65,6 @@ class TestValidateEqualLength:
             validate_equal_length(
                 np.array([1.0, 2.0]), np.array([3.0, 4.0, 5.0]), context="test"
             )
-
-
-class TestInferenceConfig:
-    # `__post_init__` eagerly calling `validate_alpha`/`validate_n_resamples`/
-    # `validate_method` (each already unit-tested above) is exercised
-    # end-to-end by `test_check.py`'s `test_rejects_invalid_alpha_before_
-    # computing_ci`/`test_rejects_unknown_method`, so it isn't re-tested here.
-
-    def test_reported_n_resamples_is_zero_for_analytical(self):
-        config = InferenceConfig(n_resamples=1000, method="analytical")
-
-        assert config.reported_n_resamples == 0
-
-    def test_reported_n_resamples_is_n_resamples_for_bootstrap(self):
-        config = InferenceConfig(n_resamples=1000, method="bootstrap")
-
-        assert config.reported_n_resamples == 1000
-
-    def test_rng_is_reproducible_with_seeded_random_state(self):
-        config_a = InferenceConfig(random_state=42)
-        config_b = InferenceConfig(random_state=42)
-
-        assert config_a.rng.integers(0, 1000) == config_b.rng.integers(0, 1000)
 
 
 class TestValidateCustomMetric:
